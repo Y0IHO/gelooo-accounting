@@ -155,15 +155,23 @@ textarea{resize:vertical;min-height:56px;}
 </head>
 <body>
 
-<!-- Auto-connect overlay -->
+<!-- Setup Screen -->
 <div class="setup-overlay" id="setup-overlay">
   <div class="setup-card">
     <div class="setup-logo">Gelooo</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:1.5rem;">Accounting System · FY 2025</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:1.5rem;">Connected Accounting System · FY 2025</div>
     <div style="background:var(--mint-l);border:1px solid #A7F3D0;border-radius:8px;padding:12px 14px;margin-bottom:1.25rem;font-size:13px;color:var(--mint-d);">
-      Connecting to Google Sheets…
+      ✓ &nbsp;Sheet ID pre-configured. Enter your API key to connect.
     </div>
-    <div style="text-align:center;padding:.5rem 0;"><span class="spinner" style="width:22px;height:22px;display:inline-block;"></span></div>
+    <div class="fg" style="margin-bottom:12px;">
+      <label>Google Sheets API Key</label>
+      <input type="password" id="setup-key" placeholder="AIzaSy..." value=""/>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Your key is stored only in this browser session. It is never sent anywhere except Google's API.</div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="startApp()">
+      <span id="setup-spinner" class="spinner hidden"></span>
+      Connect to Google Sheets
+    </button>
     <div id="setup-err" style="margin-top:8px;font-size:12px;color:var(--red-d);"></div>
   </div>
 </div>
@@ -286,14 +294,14 @@ textarea{resize:vertical;min-height:56px;}
 
 <script>
 // ── Config ──────────────────────────────────────────────────────────────
-const SHEET_ID = '1LOHajlNbPIRjGoyVfVEI_ZQpoWvCPcsCOtK0AsWBgRQ';
+const SHEET_ID = '12PARpIEwRoiys5s4xXem-WyciXlW6-H_wrur_DllR3I';
 const TX_SHEET  = 'Transactions';
 const PROD_SHEET = 'Products';
 const SST_RATE  = 0.08;
 const INCOME_CATS  = ['Gelato Sales','Catering / Events','Online Orders','Merchandise','Other Income'];
 const EXPENSE_CATS = ['Ingredients & Supplies','Packaging','Utilities','Rent','Staff Costs','Marketing','Equipment','Other Expenses'];
 
-let API_KEY = 'AIzaSyAkm66taawH_3qnKqjcMP8ipo93EFmPuys';
+let API_KEY = '';
 let db = { transactions: [], products: [] };
 let currentPage = 'dashboard';
 let _txTab = 'All';
@@ -452,6 +460,11 @@ async function syncNow(silent=false) {
 
 // ── App start ─────────────────────────────────────────────────────────────
 async function startApp() {
+  const key = $('setup-key').value.trim();
+  if(!key){ $('setup-err').textContent='Please enter your API key.'; return; }
+  API_KEY = key;
+  $('setup-spinner').classList.remove('hidden');
+  $('setup-err').textContent='';
   try {
     await ensureHeaders();
     await syncNow(true);
@@ -461,6 +474,7 @@ async function startApp() {
     await runPOSImport();
   } catch(e) {
     $('setup-err').textContent='Connection failed: '+e.message;
+    $('setup-spinner').classList.add('hidden');
     setSyncStatus('err','Error');
   }
 }
@@ -1202,7 +1216,7 @@ async function runPOSImport() {
 
 // ── Auto pre-fill key from URL (optional) ────────────────────────────────
 window.addEventListener('DOMContentLoaded',()=>{
-  startApp();
+  $('setup-key').value='';
 });
 </script>
 </body>
