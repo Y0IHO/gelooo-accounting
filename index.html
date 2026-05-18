@@ -155,23 +155,15 @@ textarea{resize:vertical;min-height:56px;}
 </head>
 <body>
 
-<!-- Setup Screen -->
+<!-- Auto-connect overlay -->
 <div class="setup-overlay" id="setup-overlay">
   <div class="setup-card">
     <div class="setup-logo">Gelooo</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:1.5rem;">Connected Accounting System · FY 2025</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:1.5rem;">Accounting System · FY 2025</div>
     <div style="background:var(--mint-l);border:1px solid #A7F3D0;border-radius:8px;padding:12px 14px;margin-bottom:1.25rem;font-size:13px;color:var(--mint-d);">
-      ✓ &nbsp;Sheet ID pre-configured. Enter your API key to connect.
+      Connecting to Google Sheets…
     </div>
-    <div class="fg" style="margin-bottom:12px;">
-      <label>Google Sheets API Key</label>
-      <input type="password" id="setup-key" placeholder="AIzaSy..." value=""/>
-    </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Your key is stored only in this browser session. It is never sent anywhere except Google's API.</div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="startApp()">
-      <span id="setup-spinner" class="spinner hidden"></span>
-      Connect to Google Sheets
-    </button>
+    <div style="text-align:center;padding:.5rem 0;"><span class="spinner" style="width:22px;height:22px;display:inline-block;"></span></div>
     <div id="setup-err" style="margin-top:8px;font-size:12px;color:var(--red-d);"></div>
   </div>
 </div>
@@ -197,6 +189,8 @@ textarea{resize:vertical;min-height:56px;}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>Product Costing</button>
     <button class="nav-item" onclick="go('sst')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14l6-6M9 9h.01M15 15h.01"/><circle cx="12" cy="12" r="10"/></svg>SST Tracker</button>
+    <button class="nav-item" onclick="go('taxcalc')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14l6-6M9 9h.01M15 15h.01"/><circle cx="12" cy="12" r="10"/></svg>Tax & SST</button>
     <button class="nav-item" onclick="go('pnl')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>P&L Statement</button>
     <button class="nav-item" onclick="go('receipts')">
@@ -269,6 +263,11 @@ textarea{resize:vertical;min-height:56px;}
       <img id="r-preview" class="preview-img hidden"/>
       <div id="r-loading" class="hidden" style="text-align:center;padding:.9rem;"><div class="spinner" style="width:22px;height:22px;margin:0 auto 6px"></div><div style="font-size:12px;color:var(--muted)">Analysing with Claude AI…</div></div>
       <div id="r-ai-box" class="ai-box hidden"><div class="ai-box-title">✦ Extracted by AI</div><div id="r-ai-fields"></div></div>
+      <!-- Amount picker — shown after AI extraction -->
+      <div id="r-amount-picker" class="hidden" style="margin-top:10px;">
+        <div style="font-size:12px;font-weight:600;color:var(--charcoal);margin-bottom:8px;">Select the amount to record:</div>
+        <div id="r-amount-options" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
       <div id="r-dup-warn" class="hidden" style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 14px;margin-top:10px;">
         <div style="font-size:12px;font-weight:600;color:#991B1B;margin-bottom:6px;">⚠️ Possible Duplicate Detected</div>
         <div id="r-dup-detail" style="font-size:12px;color:#7F1D1D;line-height:1.7;"></div>
@@ -294,14 +293,14 @@ textarea{resize:vertical;min-height:56px;}
 
 <script>
 // ── Config ──────────────────────────────────────────────────────────────
-const SHEET_ID = '12PARpIEwRoiys5s4xXem-WyciXlW6-H_wrur_DllR3I';
+const SHEET_ID = '1LOHajlNbPIRjGoyVfVEI_ZQpoWvCPcsCOtK0AsWBgRQ';
 const TX_SHEET  = 'Transactions';
 const PROD_SHEET = 'Products';
 const SST_RATE  = 0.08;
 const INCOME_CATS  = ['Gelato Sales','Catering / Events','Online Orders','Merchandise','Other Income'];
 const EXPENSE_CATS = ['Ingredients & Supplies','Packaging','Utilities','Rent','Staff Costs','Marketing','Equipment','Other Expenses'];
 
-let API_KEY = '';
+let API_KEY = 'AIzaSyAkm66taawH_3qnKqjcMP8ipo93EFmPuys';
 let db = { transactions: [], products: [] };
 let currentPage = 'dashboard';
 let _txTab = 'All';
@@ -460,11 +459,6 @@ async function syncNow(silent=false) {
 
 // ── App start ─────────────────────────────────────────────────────────────
 async function startApp() {
-  const key = $('setup-key').value.trim();
-  if(!key){ $('setup-err').textContent='Please enter your API key.'; return; }
-  API_KEY = key;
-  $('setup-spinner').classList.remove('hidden');
-  $('setup-err').textContent='';
   try {
     await ensureHeaders();
     await syncNow(true);
@@ -474,7 +468,6 @@ async function startApp() {
     await runPOSImport();
   } catch(e) {
     $('setup-err').textContent='Connection failed: '+e.message;
-    $('setup-spinner').classList.add('hidden');
     setSyncStatus('err','Error');
   }
 }
@@ -485,7 +478,7 @@ function go(page) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.getAttribute('onclick').includes(`'${page}'`));
   });
-  const titles={dashboard:'Dashboard',transactions:'Transactions',products:'Product Costing & Margins',sst:'SST Tracker',pnl:'Profit & Loss Statement',receipts:'AI Receipt Scanner',invoice:'Invoice Builder'};
+  const titles={dashboard:'Dashboard',transactions:'Transactions',products:'Product Costing & Margins',sst:'SST Tracker',taxcalc:'Tax & SST Calculator',pnl:'Profit & Loss Statement',receipts:'AI Receipt Scanner',invoice:'Invoice Builder'};
   $('page-title').textContent = titles[page]||page;
   render();
 }
@@ -496,6 +489,7 @@ function render() {
   else if(currentPage==='products') c.innerHTML=rProducts();
   else if(currentPage==='sst') c.innerHTML=rSST();
   else if(currentPage==='pnl') c.innerHTML=rPNL();
+  else if(currentPage==='taxcalc') c.innerHTML=rTaxCalc();
   else if(currentPage==='receipts') c.innerHTML=rReceipts();
   else if(currentPage==='invoice') c.innerHTML=rInvoice();
 }
@@ -867,6 +861,7 @@ function openReceipt(){
   $('r-form').classList.add('hidden');
   $('r-save-btn').classList.add('hidden');
   $('r-dup-warn').classList.add('hidden');
+  $('r-amount-picker').classList.add('hidden');
   _lastInvoiceNo = '';
   $('r-file').value='';
   $('modal-receipt').classList.remove('hidden');
@@ -884,7 +879,888 @@ async function scanReceipt(imgData){
   const b64=imgData.split(',')[1];
   const mt=imgData.split(';')[0].split(':')[1];
   try {
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mt,data:b64}},{type:'text',text:'You are scanning a Malaysian supplier invoice or receipt for Gelooo Sdn Bhd, a gelato company. The image may be rotated, sideways, or low quality — read it carefully.\n\nExtract the following and return ONLY valid JSON, no markdown, no explanation:\n{\n  "vendor": "supplier company name",\n  "invoice_no": "invoice or receipt number if visible",\n  "date": "YYYY-MM-DD format — look for Invoice Date, Date, or any date on the document",\n  "total": the final grand total as a number — look for Total, Nett Amt, Final Total, Amount — sum line items if needed,\n  "currency": "MYR",\n  "items": [{"desc": "item description", "qty": 1, "unit_price": 0.00, "amount": 0.00}],\n  "category": "pick ONE: Ingredients & Supplies | Packaging | Utilities | Rent | Staff Costs | Marketing | Equipment | Other Expenses",\n  "notes": "brief note e.g. chocolate couverture, fruit purees, etc"\n}\n\nRules:\n- For multi-line invoices, sum all line item amounts if no grand total is visible\n- The date might be written as DD.MM.YYYY or DD/MM/YYYY — convert to YYYY-MM-DD\n- Vendor is the SELLER company name, not Gelooo\n- total must be a plain number like 9946.00, not a string\n- If any field is truly unknown use null\n- Return ONLY the JSON object, nothing else'}]}]})});
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mt,data:b64}},{type:'text',text:'You are scanning a Malaysian receipt or supplier invoice for Gelooo Sdn Bhd, a gelato company in Johor Bahru. The image may be rotated, sideways, blurry, printed on thermal paper, or contain Chinese/Malay text — read it carefully.\n\nExtract and return ONLY valid JSON with no markdown, no explanation, no extra text:\n{\n  "vendor": "the SELLER or STORE name (e.g. Lotus\'s, Ng Ming Huat, Classic Fine Foods)",\n  "invoice_no": "receipt/invoice/doc number if visible, else null",\n  "date": "YYYY-MM-DD — convert from DD/MM/YYYY or DD.MM.YYYY format",\n  "total": the main TOTAL line as a plain number (e.g. 37.49),\\n  "subtotal": sub-total before discounts/rounding if different from total else null,\\n  "paid": actual amount paid via DuitNow QR/cash/card if shown and different from total else null,\\n  "rounded": rounded total if explicitly shown separately else null,\\n  "items"ml>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gelooo — Accounting System</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --mint:#00C896;--mint-d:#007A5E;--mint-l:#E6FBF5;
+  --bg:#F7F8FA;--surface:#FFFFFF;--charcoal:#111827;
+  --muted:#6B7280;--border:#E5E7EB;
+  --red:#EF4444;--red-l:#FEF2F2;--red-d:#991B1B;
+  --green:#10B981;--green-l:#D1FAE5;--green-d:#065F46;
+  --blue:#3B82F6;--blue-l:#EFF6FF;--blue-d:#1E40AF;
+  --amber:#F59E0B;--amber-l:#FFFBEB;--amber-d:#92400E;
+  --sidebar:220px;--font:'DM Sans',sans-serif;--serif:'DM Serif Display',serif;
+  --radius:10px;--radius-sm:6px;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--charcoal);min-height:100vh;display:flex;font-size:14px;line-height:1.5;}
+
+/* ── Sidebar ── */
+.sidebar{width:var(--sidebar);background:var(--charcoal);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;}
+.logo{padding:1.25rem;border-bottom:1px solid rgba(255,255,255,0.06);}
+.logo-name{font-family:var(--serif);font-size:22px;color:var(--mint);letter-spacing:-0.5px;}
+.logo-tag{font-size:10px;color:rgba(255,255,255,0.3);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
+.sync-badge{display:flex;align-items:center;gap:5px;font-size:10px;margin-top:6px;color:rgba(255,255,255,0.4);}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:#6B7280;}
+.sync-dot.ok{background:var(--mint);}
+.sync-dot.syncing{background:var(--amber);animation:pulse 1s ease-in-out infinite;}
+.sync-dot.err{background:var(--red);}
+nav{flex:1;padding:0.5rem;overflow-y:auto;}
+.nav-sec{font-size:9px;color:rgba(255,255,255,0.25);letter-spacing:2px;text-transform:uppercase;padding:10px 10px 4px;}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.55);border:none;background:none;width:100%;text-align:left;font-family:var(--font);transition:all 0.12s;}
+.nav-item svg{width:15px;height:15px;flex-shrink:0;}
+.nav-item:hover{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.9);}
+.nav-item.active{background:rgba(0,200,150,0.15);color:var(--mint);}
+.sidebar-foot{padding:1rem;border-top:1px solid rgba(255,255,255,0.06);font-size:10px;color:rgba(255,255,255,0.25);line-height:1.8;}
+
+/* ── Main ── */
+.main{margin-left:var(--sidebar);flex:1;display:flex;flex-direction:column;}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+.topbar-left{display:flex;align-items:center;gap:10px;}
+.page-title{font-size:15px;font-weight:500;}
+.content{padding:1.5rem;flex:1;}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:all 0.12s;font-family:var(--font);}
+.btn svg{width:13px;height:13px;}
+.btn-primary{background:var(--mint);color:#fff;border-color:var(--mint-d);}.btn-primary:hover{background:var(--mint-d);}
+.btn-ghost{background:transparent;color:var(--muted);border-color:var(--border);}.btn-ghost:hover{background:var(--bg);color:var(--charcoal);}
+.btn-danger{background:var(--red-l);color:var(--red-d);border-color:#FECACA;}.btn-danger:hover{background:#FEE2E2;}
+.btn-blue{background:var(--blue-l);color:var(--blue-d);border-color:#BFDBFE;}
+.btn-sm{padding:4px 9px;font-size:12px;}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);}
+.card-pad{padding:1.25rem;}
+.card-head{padding:1rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.card-head h3{font-size:14px;font-weight:500;margin:0;}
+
+/* ── Metrics ── */
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem;}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.25rem;}
+.metric-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;}
+.metric-val{font-size:20px;font-weight:600;letter-spacing:-0.5px;}
+.metric-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+.positive{color:var(--green-d);}.negative{color:var(--red-d);}
+
+/* ── Table ── */
+.tbl-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;background:var(--surface);}
+thead{background:#F8FAFC;}
+th{padding:9px 13px;text-align:left;font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:0.7px;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:10px 13px;font-size:13px;border-bottom:1px solid var(--border);}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#FAFAFA;}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;}
+.badge-income{background:var(--green-l);color:var(--green-d);}
+.badge-expense{background:var(--red-l);color:var(--red-d);}
+.badge-paid{background:var(--green-l);color:var(--green-d);}
+.badge-pending{background:var(--amber-l);color:var(--amber-d);}
+.badge-sst{background:var(--blue-l);color:var(--blue-d);}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--muted);}
+
+/* ── Form ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.fg{display:flex;flex-direction:column;gap:4px;}
+.fg.full{grid-column:1/-1;}
+label{font-size:12px;font-weight:500;color:var(--muted);}
+input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:var(--font);color:var(--charcoal);background:var(--surface);outline:none;transition:border 0.12s;width:100%;}
+input:focus,select:focus,textarea:focus{border-color:var(--mint);box-shadow:0 0 0 3px rgba(0,200,150,0.1);}
+textarea{resize:vertical;min-height:56px;}
+
+/* ── Modal ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem;}
+.modal{background:var(--surface);border-radius:14px;width:100%;max-width:540px;max-height:88vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,0.15);}
+.modal-head{padding:1.1rem 1.4rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.modal-title{font-size:15px;font-weight:600;}
+.modal-body{padding:1.4rem;}
+.modal-foot{padding:.9rem 1.4rem;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
+.hidden{display:none!important;}
+
+/* ── Setup ── */
+.setup-overlay{position:fixed;inset:0;background:var(--charcoal);z-index:300;display:flex;align-items:center;justify-content:center;}
+.setup-card{background:var(--surface);border-radius:16px;padding:2rem;width:100%;max-width:480px;box-shadow:0 32px 80px rgba(0,0,0,0.3);}
+.setup-logo{font-family:var(--serif);font-size:28px;color:var(--mint);margin-bottom:4px;}
+.setup-sub{font-size:13px;color:var(--muted);margin-bottom:1.5rem;line-height:1.5;}
+
+/* ── Misc ── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;}
+.three-col{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;}
+.bar-wrap{display:flex;flex-direction:column;gap:7px;}
+.bar-row{display:flex;align-items:center;gap:8px;font-size:12px;}
+.bar-lbl{width:100px;text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;}
+.bar-track{flex:1;height:16px;background:var(--bg);border-radius:3px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:3px;transition:width 0.4s ease;}
+.bar-val{width:72px;text-align:right;font-weight:500;color:var(--charcoal);flex-shrink:0;}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1.25rem;}
+.tab{padding:9px 15px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);background:none;border-top:none;border-left:none;border-right:none;font-family:var(--font);transition:all 0.12s;}
+.tab.active{color:var(--mint-d);border-bottom-color:var(--mint);font-weight:500;}
+.prod-inp{width:100%;padding:4px 7px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:var(--font);background:#FFFBEB;outline:none;}
+.prod-inp:focus{border-color:var(--mint);}
+.margin-pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.m-high{background:var(--green-l);color:var(--green-d);}
+.m-mid{background:var(--amber-l);color:var(--amber-d);}
+.m-low{background:var(--red-l);color:var(--red-d);}
+.pnl-sec{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);padding:7px 13px;background:#F8FAFC;border-bottom:1px solid var(--border);}
+.pnl-row{display:flex;justify-content:space-between;padding:8px 13px;border-bottom:1px solid var(--border);font-size:13px;}
+.pnl-total{font-weight:600;background:#F8FAFC;}
+.pnl-grand{font-weight:700;font-size:14px;background:var(--mint-l);color:var(--mint-d);}
+.pnl-loss{background:var(--red-l);color:var(--red-d);}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(0,200,150,0.2);border-top-color:var(--mint);border-radius:50%;animation:spin 0.7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--charcoal);color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:999;opacity:0;transition:opacity 0.2s;display:flex;align-items:center;gap:8px;}
+.toast.show{opacity:1;}
+.inv-preview{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;}
+.inv-line{display:grid;grid-template-columns:3fr 1fr 1.2fr 1.2fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.inv-line.hdr{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;}
+.search{padding:7px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:190px;background:var(--bg);font-family:var(--font);color:var(--charcoal);outline:none;}
+.search:focus{border-color:var(--mint);background:var(--surface);}
+.empty{text-align:center;padding:2.5rem;color:var(--muted);}
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:1.75rem;text-align:center;cursor:pointer;transition:all 0.15s;background:var(--bg);}
+.upload-zone:hover{border-color:var(--mint);background:var(--mint-l);}
+.preview-img{max-width:100%;border-radius:8px;margin:10px 0;max-height:180px;object-fit:cover;}
+.ai-box{background:var(--mint-l);border:1px solid #A7F3D0;border-radius:8px;padding:.9rem;margin-top:10px;}
+.ai-box-title{font-size:10px;font-weight:600;color:var(--mint-d);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+.ai-field{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;}
+.ai-lbl{color:var(--muted);}.ai-val{font-weight:500;}
+</style>
+</head>
+<body>
+
+<!-- Auto-connect overlay -->
+<div class="setup-overlay" id="setup-overlay">
+  <div class="setup-card">
+    <div class="setup-logo">Gelooo</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:1.5rem;">Accounting System · FY 2025</div>
+    <div style="background:var(--mint-l);border:1px solid #A7F3D0;border-radius:8px;padding:12px 14px;margin-bottom:1.25rem;font-size:13px;color:var(--mint-d);">
+      Connecting to Google Sheets…
+    </div>
+    <div style="text-align:center;padding:.5rem 0;"><span class="spinner" style="width:22px;height:22px;display:inline-block;"></span></div>
+    <div id="setup-err" style="margin-top:8px;font-size:12px;color:var(--red-d);"></div>
+  </div>
+</div>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-name">Gelooo</div>
+    <div class="logo-tag">Accounting · FY 2025</div>
+    <div class="sync-badge">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span id="sync-label">Not connected</span>
+    </div>
+  </div>
+  <nav>
+    <div class="nav-sec">Overview</div>
+    <button class="nav-item active" onclick="go('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+    <div class="nav-sec">Finance</div>
+    <button class="nav-item" onclick="go('transactions')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>Transactions</button>
+    <button class="nav-item" onclick="go('products')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>Product Costing</button>
+    <button class="nav-item" onclick="go('sst')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14l6-6M9 9h.01M15 15h.01"/><circle cx="12" cy="12" r="10"/></svg>SST Tracker</button>
+    <button class="nav-item" onclick="go('taxcalc')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14l6-6M9 9h.01M15 15h.01"/><circle cx="12" cy="12" r="10"/></svg>Tax & SST</button>
+    <button class="nav-item" onclick="go('pnl')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>P&L Statement</button>
+    <button class="nav-item" onclick="go('receipts')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>AI Receipt Scan</button>
+    <button class="nav-item" onclick="go('invoice')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Invoice Builder</button>
+    <div class="nav-sec">Tools</div>
+    <button class="nav-item" onclick="syncNow()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>Sync Now</button>
+  </nav>
+  <div class="sidebar-foot">
+    Sheet ID: 12PARpIE…<br/>SST Rate: 8% · MYR
+  </div>
+</aside>
+
+<!-- Main -->
+<main class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="page-title" id="page-title">Dashboard</span>
+      <span id="loading-indicator" class="hidden"><span class="spinner"></span></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <input class="search" type="text" placeholder="Search..." id="g-search" oninput="handleSearch(this.value)"/>
+      <button class="btn btn-ghost btn-sm" onclick="syncNow()" title="Sync with Google Sheets">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>Sync
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Entry</button>
+    </div>
+  </div>
+  <div class="content" id="content">
+    <div class="empty">Connecting to Google Sheets…</div>
+  </div>
+</main>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Add Transaction Modal -->
+<div class="overlay hidden" id="modal-add">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">New Transaction</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="fg"><label>Type</label><select id="f-type" onchange="refreshCats()"><option value="income">Income</option><option value="expense">Expense</option></select></div>
+        <div class="fg"><label>Date</label><input type="date" id="f-date"/></div>
+        <div class="fg full"><label>Description</label><input type="text" id="f-desc" placeholder="e.g. Gelato walk-in sales"/></div>
+        <div class="fg"><label>Amount (RM excl. SST)</label><input type="number" id="f-amount" placeholder="0.00" step="0.01" min="0"/></div>
+        <div class="fg"><label>Category</label><select id="f-cat"></select></div>
+        <div class="fg full"><label>Vendor / Company</label><input type="text" id="f-vendor" placeholder="e.g. Grab Malaysia"/></div>
+        <div class="fg"><label>Payment Method</label><select id="f-pay"><option>Cash</option><option>Bank Transfer</option><option>DuitNow / QR</option><option>Credit Card</option><option>Cheque</option></select></div>
+        <div class="fg"><label>Status</label><select id="f-status"><option value="paid">Paid / Received</option><option value="pending">Pending</option></select></div>
+        <div class="fg full"><label>Notes</label><textarea id="f-notes" placeholder="Optional…"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('modal-add')">Cancel</button><button class="btn btn-primary" onclick="saveTx()"><span id="save-spin" class="spinner hidden"></span>Save & Sync</button></div>
+  </div>
+</div>
+
+<!-- Receipt Modal -->
+<div class="overlay hidden" id="modal-receipt">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">📷 AI Receipt Scanner</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-receipt')">✕</button></div>
+    <div class="modal-body">
+      <div class="upload-zone" onclick="document.getElementById('r-file').click()" ondragover="event.preventDefault()" ondrop="event.preventDefault();handleDrop(event)">
+        <div style="font-size:28px;margin-bottom:6px;">🧾</div>
+        <div style="font-size:13px;color:var(--muted);"><strong style="color:var(--charcoal)">Click or drag</strong> a receipt photo here</div>
+      </div>
+      <input type="file" id="r-file" accept="image/*" class="hidden" onchange="handleRFile(this)"/>
+      <img id="r-preview" class="preview-img hidden"/>
+      <div id="r-loading" class="hidden" style="text-align:center;padding:.9rem;"><div class="spinner" style="width:22px;height:22px;margin:0 auto 6px"></div><div style="font-size:12px;color:var(--muted)">Analysing with Claude AI…</div></div>
+      <div id="r-ai-box" class="ai-box hidden"><div class="ai-box-title">✦ Extracted by AI</div><div id="r-ai-fields"></div></div>
+      <!-- Amount picker — shown after AI extraction -->
+      <div id="r-amount-picker" class="hidden" style="margin-top:10px;">
+        <div style="font-size:12px;font-weight:600;color:var(--charcoal);margin-bottom:8px;">Select the amount to record:</div>
+        <div id="r-amount-options" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+      <div id="r-dup-warn" class="hidden" style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 14px;margin-top:10px;">
+        <div style="font-size:12px;font-weight:600;color:#991B1B;margin-bottom:6px;">⚠️ Possible Duplicate Detected</div>
+        <div id="r-dup-detail" style="font-size:12px;color:#7F1D1D;line-height:1.7;"></div>
+        <div style="margin-top:10px;display:flex;gap:8px;">
+          <button class="btn btn-danger btn-sm" onclick="dismissDuplicate()" style="font-size:12px;">Discard — it's a duplicate</button>
+          <button class="btn btn-ghost btn-sm" onclick="overrideDuplicate()" style="font-size:12px;border-color:#FECACA;color:#991B1B;">Save anyway — it's different</button>
+        </div>
+      </div>
+      <div id="r-form" class="hidden">
+        <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;"/>
+        <div class="form-grid">
+          <div class="fg full"><label>Vendor</label><input type="text" id="r-vendor"/></div>
+          <div class="fg"><label>Amount (RM)</label><input type="number" id="r-amount" step="0.01"/></div>
+          <div class="fg"><label>Date</label><input type="date" id="r-date"/></div>
+          <div class="fg full"><label>Category</label><select id="r-cat"><option>Ingredients & Supplies</option><option>Packaging</option><option>Utilities</option><option>Rent</option><option>Staff Costs</option><option>Marketing</option><option>Equipment</option><option>Other Expenses</option></select></div>
+          <div class="fg full"><label>Notes</label><input type="text" id="r-notes"/></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('modal-receipt')">Cancel</button><button class="btn btn-primary hidden" id="r-save-btn" onclick="saveReceipt()"><span id="r-spin" class="spinner hidden"></span>Save & Sync</button></div>
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────
+const SHEET_ID = '1LOHajlNbPIRjGoyVfVEI_ZQpoWvCPcsCOtK0AsWBgRQ';
+const TX_SHEET  = 'Transactions';
+const PROD_SHEET = 'Products';
+const SST_RATE  = 0.08;
+const INCOME_CATS  = ['Gelato Sales','Catering / Events','Online Orders','Merchandise','Other Income'];
+const EXPENSE_CATS = ['Ingredients & Supplies','Packaging','Utilities','Rent','Staff Costs','Marketing','Equipment','Other Expenses'];
+
+let API_KEY = 'AIzaSyAkm66taawH_3qnKqjcMP8ipo93EFmPuys';
+let db = { transactions: [], products: [] };
+let currentPage = 'dashboard';
+let _txTab = 'All';
+let _lastInvoiceNo = ''; // tracks scanned invoice number for dedup
+let _invoice = { client:'', address:'', items:[{desc:'',qty:1,price:0},{desc:'',qty:1,price:0},{desc:'',qty:1,price:0}], invoiceNo:'INV-2025-001', date: new Date().toISOString().slice(0,10) };
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const fmt = n => 'RM ' + Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = n => (Number(n||0)*100).toFixed(1)+'%';
+function toast(msg, type='ok'){
+  const t=$('toast'); t.innerHTML=(type==='ok'?'✓ ':'⚠ ')+msg;
+  t.className='toast show'+(type==='err'?' '+type:'');
+  setTimeout(()=>t.className='toast',2800);
+}
+function setSyncStatus(state, label){
+  const d=$('sync-dot'), l=$('sync-label');
+  d.className='sync-dot '+state; l.textContent=label;
+}
+function showLoading(on){ $('loading-indicator').classList.toggle('hidden',!on); }
+
+// ── Google Sheets API ─────────────────────────────────────────────────────
+const sheetsBase = 'https://sheets.googleapis.com/v4/spreadsheets';
+
+async function readSheet(sheetName) {
+  const url = `${sheetsBase}/${SHEET_ID}/values/${encodeURIComponent(sheetName)}?key=${API_KEY}`;
+  const r = await fetch(url);
+  if(!r.ok){ const e=await r.json(); throw new Error(e.error?.message||'Read failed'); }
+  const d = await r.json();
+  return d.values || [];
+}
+
+async function writeSheet(sheetName, values) {
+  const url = `${sheetsBase}/${SHEET_ID}/values/${encodeURIComponent(sheetName)}?valueInputOption=RAW&key=${API_KEY}`;
+  const r = await fetch(url, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ range: sheetName, majorDimension:'ROWS', values })
+  });
+  if(!r.ok){ const e=await r.json(); throw new Error(e.error?.message||'Write failed'); }
+  return await r.json();
+}
+
+async function appendRow(sheetName, row) {
+  const url = `${sheetsBase}/${SHEET_ID}/values/${encodeURIComponent(sheetName)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS&key=${API_KEY}`;
+  const r = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ range: sheetName, majorDimension:'ROWS', values:[row] })
+  });
+  if(!r.ok){ const e=await r.json(); throw new Error(e.error?.message||'Append failed'); }
+  return await r.json();
+}
+
+async function deleteRow(sheetName, rowIndex, sheetGid) {
+  const url = `${sheetsBase}/${SHEET_ID}:batchUpdate?key=${API_KEY}`;
+  const r = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ requests:[{ deleteDimension:{ range:{ sheetId: sheetGid, dimension:'ROWS', startIndex: rowIndex, endIndex: rowIndex+1 }}}]})
+  });
+  if(!r.ok){ const e=await r.json(); throw new Error(e.error?.message||'Delete failed'); }
+}
+
+async function getSheetGids() {
+  const url = `${sheetsBase}/${SHEET_ID}?key=${API_KEY}`;
+  const r = await fetch(url);
+  const d = await r.json();
+  const gids = {};
+  (d.sheets||[]).forEach(s=>{ gids[s.properties.title] = s.properties.sheetId; });
+  return gids;
+}
+
+// ── Parse / serialize ──────────────────────────────────────────────────────
+function rowsToTx(rows) {
+  if(!rows.length) return [];
+  const headers = rows[0].map(h=>h.toLowerCase().trim());
+  return rows.slice(1).map((r,i) => {
+    const obj = { _row: i+2 };
+    headers.forEach((h,ci) => { obj[h] = r[ci]||''; });
+    return {
+      id: parseInt(obj.id)||0,
+      _row: obj._row,
+      type: (obj.type||'').toLowerCase(),
+      date: obj.date||'',
+      desc: obj.description||obj.desc||'',
+      amount: parseFloat(obj.amount)||0,
+      category: obj.category||'',
+      vendor: obj.vendor||'',
+      payment: obj['payment method']||obj.payment||'',
+      status: (obj.status||'paid').toLowerCase(),
+      notes: obj.notes||'',
+    };
+  }).filter(t=>t.date);
+}
+
+function rowsToProd(rows) {
+  if(!rows.length) return [];
+  const headers = rows[0].map(h=>h.toLowerCase().trim());
+  return rows.slice(1).map((r,i) => {
+    const obj={ _row:i+2 };
+    headers.forEach((h,ci)=>{ obj[h]=r[ci]||''; });
+    return {
+      id: parseInt(obj.id)||0,
+      _row: obj._row,
+      name: obj.name||'',
+      material: parseFloat(obj.material)||0,
+      labour: parseFloat(obj.labour)||0,
+      overhead: parseFloat(obj.overhead)||0,
+      sellPrice: parseFloat(obj.sellprice||obj['sell price']||obj['selling price'])||0,
+      unitsSold: parseInt(obj.unitssold||obj['units sold'])||0,
+    };
+  }).filter(p=>p.name);
+}
+
+function txToRow(t) {
+  return [t.id, t.date, t.type, t.desc, t.vendor, t.category, t.payment, t.amount, (t.amount*SST_RATE).toFixed(2), t.status, t.notes];
+}
+function prodToRow(p) {
+  return [p.id, p.name, p.material, p.labour, p.overhead, p.sellPrice, p.unitsSold];
+}
+
+// ── Ensure headers exist ──────────────────────────────────────────────────
+async function ensureHeaders() {
+  try {
+    const txRows = await readSheet(TX_SHEET);
+    if(!txRows.length || txRows[0][0]!=='ID') {
+      await writeSheet(TX_SHEET, [['ID','Date','Type','Description','Vendor','Category','Payment Method','Amount','SST','Status','Notes']]);
+    }
+  } catch(e) { /* sheet might not exist yet */ }
+  try {
+    const pRows = await readSheet(PROD_SHEET);
+    if(!pRows.length || pRows[0][0]!=='ID') {
+      await writeSheet(PROD_SHEET, [['ID','Name','Material','Labour','Overhead','SellPrice','UnitsSold']]);
+    }
+  } catch(e) {}
+}
+
+// ── Sync ─────────────────────────────────────────────────────────────────
+async function syncNow(silent=false) {
+  setSyncStatus('syncing','Syncing…');
+  showLoading(true);
+  try {
+    const [txRows, prodRows] = await Promise.all([readSheet(TX_SHEET), readSheet(PROD_SHEET)]);
+    db.transactions = rowsToTx(txRows);
+    db.products = rowsToProd(prodRows);
+    setSyncStatus('ok','Synced · '+new Date().toLocaleTimeString('en-MY',{hour:'2-digit',minute:'2-digit'}));
+    if(!silent) toast('Synced with Google Sheets');
+    render();
+  } catch(e) {
+    setSyncStatus('err','Sync error');
+    toast('Sync failed: '+e.message,'err');
+  }
+  showLoading(false);
+}
+
+// ── App start ─────────────────────────────────────────────────────────────
+async function startApp() {
+  try {
+    await ensureHeaders();
+    await syncNow(true);
+    $('setup-overlay').classList.add('hidden');
+    toast('Connected to Google Sheets ✓');
+    setInterval(()=>syncNow(true), 30000);
+    await runPOSImport();
+  } catch(e) {
+    $('setup-err').textContent='Connection failed: '+e.message;
+    setSyncStatus('err','Error');
+  }
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────
+function go(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('onclick').includes(`'${page}'`));
+  });
+  const titles={dashboard:'Dashboard',transactions:'Transactions',products:'Product Costing & Margins',sst:'SST Tracker',taxcalc:'Tax & SST Calculator',pnl:'Profit & Loss Statement',receipts:'AI Receipt Scanner',invoice:'Invoice Builder'};
+  $('page-title').textContent = titles[page]||page;
+  render();
+}
+function render() {
+  const c=$('content');
+  if(currentPage==='dashboard') c.innerHTML=rDashboard();
+  else if(currentPage==='transactions') c.innerHTML=rTransactions();
+  else if(currentPage==='products') c.innerHTML=rProducts();
+  else if(currentPage==='sst') c.innerHTML=rSST();
+  else if(currentPage==='pnl') c.innerHTML=rPNL();
+  else if(currentPage==='taxcalc') c.innerHTML=rTaxCalc();
+  else if(currentPage==='receipts') c.innerHTML=rReceipts();
+  else if(currentPage==='invoice') c.innerHTML=rInvoice();
+}
+
+// ── Computed ───────────────────────────────────────────────────────────────
+const totInc  = () => db.transactions.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+const totExp  = () => db.transactions.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+const netPro  = () => totInc()-totExp();
+const totSST  = () => db.transactions.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount*SST_RATE,0);
+const cogs    = p => (parseFloat(p.material)||0)+(parseFloat(p.labour)||0)+(parseFloat(p.overhead)||0);
+const gMargin = p => { const s=parseFloat(p.sellPrice)||0,c=cogs(p); return s>0?(s-c)/s:0; };
+const prodRev = p => (parseFloat(p.sellPrice)||0)*(parseInt(p.unitsSold)||0);
+function grouped(type){ const g={}; db.transactions.filter(t=>t.type===type).forEach(t=>{g[t.category]=(g[t.category]||0)+t.amount;}); return Object.entries(g).sort((a,b)=>b[1]-a[1]); }
+
+// ── Dashboard ─────────────────────────────────────────────────────────────
+function rDashboard(){
+  const inc=totInc(),exp=totExp(),net=netPro();
+  const topE=grouped('expense').slice(0,5),topI=grouped('income').slice(0,4);
+  const maxE=topE[0]?topE[0][1]:1,maxI=topI[0]?topI[0][1]:1;
+  const recent=[...db.transactions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
+  const topP=[...db.products].sort((a,b)=>prodRev(b)-prodRev(a)).slice(0,4);
+  const maxR=topP[0]?prodRev(topP[0]):1;
+  return `
+  <div class="metric-grid">
+    <div class="metric"><div class="metric-lbl">Total Revenue</div><div class="metric-val positive">${fmt(inc)}</div><div class="metric-sub">YTD 2025</div></div>
+    <div class="metric"><div class="metric-lbl">Total Expenses</div><div class="metric-val negative">${fmt(exp)}</div><div class="metric-sub">All categories</div></div>
+    <div class="metric"><div class="metric-lbl">Net Profit</div><div class="metric-val ${net>=0?'positive':'negative'}">${fmt(net)}</div><div class="metric-sub">${inc>0?pct(net/inc):'0%'} margin</div></div>
+    <div class="metric"><div class="metric-lbl">SST Collected</div><div class="metric-val" style="color:var(--blue)">${fmt(totSST())}</div><div class="metric-sub">Payable to RMCD</div></div>
+  </div>
+  <div class="two-col">
+    <div class="card card-pad"><h3 style="font-size:14px;font-weight:500;margin-bottom:.9rem;">Revenue Streams</h3><div class="bar-wrap">${topI.map(([cat,amt])=>`<div class="bar-row"><div class="bar-lbl">${cat}</div><div class="bar-track"><div class="bar-fill" style="width:${(amt/maxI*100).toFixed(1)}%;background:var(--mint)"></div></div><div class="bar-val">${fmt(amt)}</div></div>`).join('')}</div></div>
+    <div class="card card-pad"><h3 style="font-size:14px;font-weight:500;margin-bottom:.9rem;">Top Expenses</h3><div class="bar-wrap">${topE.map(([cat,amt])=>`<div class="bar-row"><div class="bar-lbl">${cat}</div><div class="bar-track"><div class="bar-fill" style="width:${(amt/maxE*100).toFixed(1)}%;background:var(--red)"></div></div><div class="bar-val">${fmt(amt)}</div></div>`).join('')}</div></div>
+  </div>
+  <div class="two-col" style="margin-top:1rem;">
+    <div class="card card-pad"><h3 style="font-size:14px;font-weight:500;margin-bottom:.9rem;">Top Products by Revenue</h3><div class="bar-wrap">${topP.length?topP.map(p=>`<div class="bar-row"><div class="bar-lbl">${p.name.split(' ').slice(0,2).join(' ')}</div><div class="bar-track"><div class="bar-fill" style="width:${(prodRev(p)/maxR*100).toFixed(1)}%;background:var(--blue)"></div></div><div class="bar-val">${fmt(prodRev(p))}</div></div>`).join(''):'<div class="empty">No products yet</div>'}</div></div>
+    <div class="card"><div class="card-head"><h3>Recent Transactions</h3><button class="btn btn-ghost btn-sm" onclick="go('transactions')">View all →</button></div><table><thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Type</th></tr></thead><tbody>${recent.length?recent.map(t=>`<tr><td style="white-space:nowrap">${t.date}</td><td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.desc}</td><td class="${t.type==='income'?'positive':'negative'}" style="white-space:nowrap;font-weight:500">${t.type==='income'?'+':'-'}${fmt(t.amount)}</td><td><span class="badge badge-${t.type}">${t.type}</span></td></tr>`).join(''):'<tr><td colspan="4"><div class="empty">No transactions yet</div></td></tr>'}</tbody></table></div>
+  </div>`;
+}
+
+// ── Transactions ───────────────────────────────────────────────────────────
+function rTransactions(filter=''){
+  let txs=[...db.transactions].sort((a,b)=>b.date.localeCompare(a.date));
+  if(_txTab==='Income') txs=txs.filter(t=>t.type==='income');
+  else if(_txTab==='Expense') txs=txs.filter(t=>t.type==='expense');
+  else if(_txTab==='Pending') txs=txs.filter(t=>t.status==='pending');
+  if(filter) txs=txs.filter(t=>(t.desc+t.vendor+t.category).toLowerCase().includes(filter.toLowerCase()));
+  return `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+    <div class="tabs" style="margin:0;border:none;">${['All','Income','Expense','Pending'].map(t=>`<button class="tab ${t===_txTab?'active':''}" onclick="_txTab='${t}';render()">${t}</button>`).join('')}</div>
+    <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add</button>
+  </div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Date</th><th>Description</th><th>Vendor</th><th>Category</th><th>Amount</th><th>SST (8%)</th><th>Total incl SST</th><th>Status</th><th></th></tr></thead>
+    <tbody>${txs.length?txs.map(t=>`<tr>
+      <td style="white-space:nowrap">${t.date}</td>
+      <td>${t.desc}</td>
+      <td style="color:var(--muted);font-size:12px">${t.vendor||'—'}</td>
+      <td><span class="tag">${t.category}</span></td>
+      <td class="${t.type==='income'?'positive':'negative'}" style="font-weight:600;white-space:nowrap">${t.type==='income'?'+':'-'}${fmt(t.amount)}</td>
+      <td style="color:var(--blue);font-size:12px">${t.type==='income'?fmt(t.amount*SST_RATE):'—'}</td>
+      <td style="font-weight:500;white-space:nowrap">${t.type==='income'?fmt(t.amount*(1+SST_RATE)):fmt(t.amount)}</td>
+      <td><span class="badge badge-${t.status}">${t.status}</span></td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteTx(${t._row})">✕</button></td>
+    </tr>`).join(''):`<tr><td colspan="9"><div class="empty">No transactions found</div></td></tr>`}</tbody>
+  </table></div>
+  <div style="margin-top:10px;font-size:12px;color:var(--muted);text-align:right;">${txs.length} entries · Live from Google Sheets</div>`;
+}
+
+// ── Products ───────────────────────────────────────────────────────────────
+function rProducts(){
+  const totalRev=db.products.reduce((s,p)=>s+prodRev(p),0);
+  const totalGP=db.products.reduce((s,p)=>s+(parseFloat(p.sellPrice)-cogs(p))*(parseInt(p.unitsSold)||0),0);
+  const avgM=db.products.length?db.products.reduce((s,p)=>s+gMargin(p),0)/db.products.length:0;
+  return `
+  <div class="metric-grid">
+    <div class="metric"><div class="metric-lbl">Product Revenue</div><div class="metric-val" style="color:var(--blue)">${fmt(totalRev)}</div></div>
+    <div class="metric"><div class="metric-lbl">Gross Profit</div><div class="metric-val positive">${fmt(totalGP)}</div></div>
+    <div class="metric"><div class="metric-lbl">Avg Margin</div><div class="metric-val" style="color:var(--mint-d)">${pct(avgM)}</div></div>
+    <div class="metric"><div class="metric-lbl">Products</div><div class="metric-val">${db.products.length}</div></div>
+  </div>
+  <div class="card" style="margin-bottom:1rem;">
+    <div class="card-head"><h3>Product Costing Table <span style="font-weight:400;font-size:12px;color:var(--muted)">— edit any yellow cell, then click Save</span></h3><button class="btn btn-primary btn-sm" onclick="addProduct()">+ Add Product</button></div>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead><tr><th>Product</th><th>Material</th><th>Labour</th><th>Overhead</th><th>COGS</th><th>Sell Price</th><th>+SST 8%</th><th>Gross Profit</th><th>Margin</th><th>Units</th><th>Revenue</th><th></th></tr></thead>
+      <tbody id="prod-body">${db.products.map(p=>rProdRow(p)).join('')}</tbody>
+    </table></div>
+  </div>
+  ${db.products.length?`<div class="card card-pad" style="background:var(--mint-l);border-color:#A7F3D0;">
+    <h3 style="color:var(--mint-d);margin-bottom:.75rem;">💡 Pricing Insights</h3>
+    <div class="three-col">
+      ${(()=>{const sorted_m=[...db.products].sort((a,b)=>gMargin(b)-gMargin(a))[0];const sorted_r=[...db.products].sort((a,b)=>prodRev(b)-prodRev(a))[0];const sorted_u=[...db.products].sort((a,b)=>(b.unitsSold||0)-(a.unitsSold||0))[0];return[['🏆 Best Margin',sorted_m.name,pct(gMargin(sorted_m))],['💰 Top Revenue',sorted_r.name,fmt(prodRev(sorted_r))],['📦 Most Sold',sorted_u.name,(sorted_u.unitsSold||0)+' units']].map(([l,n,v])=>`<div style="background:white;border-radius:8px;padding:12px;border:1px solid #A7F3D0;"><div style="font-size:12px;color:var(--muted);margin-bottom:3px;">${l}</div><div style="font-weight:500;font-size:13px;">${n}</div><div style="color:var(--mint-d);font-weight:600;">${v}</div></div>`).join('');})()}
+    </div>
+  </div>`:''}`;
+}
+
+function rProdRow(p){
+  const c=cogs(p),s=parseFloat(p.sellPrice)||0,m=gMargin(p),gp=s-c;
+  const mc=m>=0.5?'m-high':m>=0.3?'m-mid':'m-low';
+  return `<tr id="pr-${p._row}">
+    <td><input class="prod-inp" style="width:150px" value="${p.name}" onchange="updateProd(${p._row},'name',this.value)"/></td>
+    <td><input class="prod-inp" type="number" style="width:72px" value="${p.material}" step="0.01" onchange="updateProd(${p._row},'material',this.value)"/></td>
+    <td><input class="prod-inp" type="number" style="width:65px" value="${p.labour}" step="0.01" onchange="updateProd(${p._row},'labour',this.value)"/></td>
+    <td><input class="prod-inp" type="number" style="width:65px" value="${p.overhead}" step="0.01" onchange="updateProd(${p._row},'overhead',this.value)"/></td>
+    <td style="font-weight:600;color:var(--red-d)">${fmt(c)}</td>
+    <td><input class="prod-inp" type="number" style="width:75px" value="${p.sellPrice}" step="0.01" onchange="updateProd(${p._row},'sellPrice',this.value)"/></td>
+    <td style="color:var(--blue);font-size:12px">${fmt(s*1.08)}</td>
+    <td style="font-weight:600;color:var(--green-d)">${fmt(gp)}</td>
+    <td><span class="margin-pill ${mc}">${pct(m)}</span></td>
+    <td><input class="prod-inp" type="number" style="width:60px" value="${p.unitsSold}" onchange="updateProd(${p._row},'unitsSold',this.value)"/></td>
+    <td style="font-weight:600;color:var(--mint-d)">${fmt(prodRev(p))}</td>
+    <td><button class="btn btn-primary btn-sm" onclick="saveProd(${p._row})" title="Save to Google Sheets">💾</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteProd(${p._row})" style="margin-top:2px">✕</button></td>
+  </tr>`;
+}
+
+// ── SST ────────────────────────────────────────────────────────────────────
+function rSST(){
+  const byMonth={};
+  db.transactions.forEach(t=>{const m=t.date.slice(0,7);if(!byMonth[m]) byMonth[m]={income:0,expense:0};byMonth[m][t.type]+=t.amount;});
+  const rows=Object.entries(byMonth).sort();
+  return `
+  <div style="background:var(--blue-l);border:1px solid #BFDBFE;border-radius:var(--radius);padding:1.1rem 1.25rem;margin-bottom:1.25rem;">
+    <div style="font-size:14px;font-weight:500;color:var(--blue-d);margin-bottom:4px;">Sales & Service Tax (SST) — Malaysia</div>
+    <div style="font-size:13px;color:var(--muted);">Current rate: <strong>8%</strong>. Returns filed bi-monthly with RMCD. Registration threshold: RM 500,000/year.</div>
+  </div>
+  <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1.25rem;">
+    <div class="metric"><div class="metric-lbl">SST Collected</div><div class="metric-val" style="color:var(--blue)">${fmt(totSST())}</div><div class="metric-sub">From all income</div></div>
+    <div class="metric"><div class="metric-lbl">Taxable Revenue</div><div class="metric-val positive">${fmt(totInc())}</div></div>
+    <div class="metric"><div class="metric-lbl">Revenue incl SST</div><div class="metric-val">${fmt(totInc()*(1+SST_RATE))}</div><div class="metric-sub">Charged to customers</div></div>
+  </div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Month</th><th>Taxable Sales</th><th>SST Collected</th><th>Revenue incl SST</th><th>Rate</th></tr></thead>
+    <tbody>${rows.map(([m,v])=>`<tr>
+      <td style="font-weight:500">${m}</td>
+      <td class="positive">${fmt(v.income)}</td>
+      <td style="color:var(--blue);font-weight:600">${fmt(v.income*SST_RATE)}</td>
+      <td>${fmt(v.income*(1+SST_RATE))}</td>
+      <td><span class="badge badge-sst">8%</span></td>
+    </tr>`).join('')}
+    <tr style="font-weight:700;background:#F8FAFC;">
+      <td>TOTAL</td><td class="positive">${fmt(totInc())}</td>
+      <td style="color:var(--blue)">${fmt(totSST())}</td>
+      <td>${fmt(totInc()*(1+SST_RATE))}</td><td></td>
+    </tr></tbody>
+  </table></div>`;
+}
+
+// ── P&L ───────────────────────────────────────────────────────────────────
+function rPNL(){
+  const inc=totInc(),exp=totExp(),net=netPro();
+  const iG=grouped('income'),eG=grouped('expense');
+  const byMonth={};
+  db.transactions.forEach(t=>{const m=t.date.slice(0,7);if(!byMonth[m]) byMonth[m]={income:0,expense:0};byMonth[m][t.type]+=t.amount;});
+  return `
+  <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1.25rem;">
+    <div class="metric"><div class="metric-lbl">Gross Revenue</div><div class="metric-val positive">${fmt(inc)}</div></div>
+    <div class="metric"><div class="metric-lbl">Total Expenses</div><div class="metric-val negative">${fmt(exp)}</div></div>
+    <div class="metric"><div class="metric-lbl">Net Profit / (Loss)</div><div class="metric-val ${net>=0?'positive':'negative'}">${fmt(net)}</div></div>
+  </div>
+  <div class="two-col">
+    <div>
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="pnl-sec">Revenue</div>
+        ${iG.map(([cat,amt])=>`<div class="pnl-row"><span>${cat}</span><span class="positive">${fmt(amt)}</span></div>`).join('')||'<div class="empty">No income recorded</div>'}
+        <div class="pnl-row pnl-total"><span>Total Revenue</span><span class="positive">${fmt(inc)}</span></div>
+      </div>
+      <div class="card">
+        <div class="pnl-sec">Expenses</div>
+        ${eG.map(([cat,amt])=>`<div class="pnl-row"><span>${cat}</span><span class="negative">(${fmt(amt)})</span></div>`).join('')||'<div class="empty">No expenses recorded</div>'}
+        <div class="pnl-row pnl-total"><span>Total Expenses</span><span class="negative">(${fmt(exp)})</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="pnl-sec">Summary</div>
+        <div class="pnl-row"><span>Revenue</span><span class="positive">${fmt(inc)}</span></div>
+        <div class="pnl-row"><span>Expenses</span><span class="negative">(${fmt(exp)})</span></div>
+        <div class="pnl-row ${net>=0?'pnl-grand':'pnl-loss'}"><span>Net Profit</span><span>${fmt(net)}</span></div>
+        <div class="pnl-row"><span style="color:var(--muted)">Margin</span><span>${inc>0?pct(net/inc):'—'}</span></div>
+        <div class="pnl-row"><span style="color:var(--muted)">SST Collected</span><span style="color:var(--blue)">${fmt(totSST())}</span></div>
+      </div>
+      <div class="card">
+        <div class="pnl-sec">Monthly Breakdown</div>
+        ${Object.entries(byMonth).sort().map(([m,v])=>{const n=v.income-v.expense;return`<div class="pnl-row"><span>${m}</span><span class="${n>=0?'positive':'negative'}">${fmt(n)}</span></div>`;}).join('')||'<div class="empty">No data</div>'}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Receipts ───────────────────────────────────────────────────────────────
+function rReceipts(){
+  const receipts=db.transactions.filter(t=>t.notes&&t.notes.includes('[AI-scan]'));
+  return `
+  <div class="two-col">
+    <div>
+      <div class="card card-pad" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:.75rem;">Scan Receipt with AI</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Upload a receipt photo — Claude AI reads it and auto-fills the expense. Saved directly to Google Sheets.</p>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="openReceipt()">📷 &nbsp;Upload & Scan Receipt</button>
+      </div>
+      <div class="card card-pad">
+        <h3 style="margin-bottom:.75rem;">How it works</h3>
+        ${[['1','Upload','Take or upload a photo of any receipt.'],['2','AI reads','Claude AI extracts vendor, total, date & category.'],['3','Auto-saved','Confirmed entry syncs straight to Google Sheets.']].map(([n,t,d])=>`<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;"><div style="width:22px;height:22px;border-radius:50%;background:var(--mint);color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${n}</div><div><div style="font-weight:500;font-size:13px;">${t}</div><div style="font-size:12px;color:var(--muted)">${d}</div></div></div>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Scanned Receipts</h3><span style="font-size:12px;background:var(--mint-l);color:var(--mint-d);padding:2px 10px;border-radius:20px;">${receipts.length} scanned</span></div>
+      ${receipts.length?receipts.map(t=>`<div style="padding:11px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><div><div style="font-weight:500;font-size:13px;">${t.vendor||t.desc}</div><div style="font-size:12px;color:var(--muted)">${t.category} · ${t.date}</div></div><div class="negative" style="font-weight:600;">${fmt(t.amount)}</div></div>`).join(''):'<div class="empty">No receipts scanned yet</div>'}
+    </div>
+  </div>`;
+}
+
+// ── Invoice ────────────────────────────────────────────────────────────────
+function rInvoice(){
+  const sub=_invoice.items.reduce((s,i)=>s+(parseFloat(i.qty)||0)*(parseFloat(i.price)||0),0);
+  const sst=sub*SST_RATE,total=sub+sst;
+  return `
+  <div class="two-col">
+    <div>
+      <div class="card card-pad" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:.75rem;">Invoice Details</h3>
+        <div class="form-grid">
+          <div class="fg"><label>Invoice No.</label><input type="text" value="${_invoice.invoiceNo}" oninput="_invoice.invoiceNo=this.value;refreshInv()"/></div>
+          <div class="fg"><label>Date</label><input type="date" value="${_invoice.date}" oninput="_invoice.date=this.value;refreshInv()"/></div>
+          <div class="fg full"><label>Client Name</label><input type="text" placeholder="Company name" value="${_invoice.client}" oninput="_invoice.client=this.value;refreshInv()"/></div>
+          <div class="fg full"><label>Client Address</label><input type="text" placeholder="Address" value="${_invoice.address}" oninput="_invoice.address=this.value;refreshInv()"/></div>
+        </div>
+      </div>
+      <div class="card card-pad">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;"><h3 style="margin:0;">Line Items</h3><button class="btn btn-ghost btn-sm" onclick="addInvLine()">+ Add</button></div>
+        <div id="inv-lines">${_invoice.items.map((it,i)=>`<div style="display:grid;grid-template-columns:3fr 1fr 1.5fr 22px;gap:6px;margin-bottom:7px;align-items:center;">
+          <input type="text" placeholder="Description" value="${it.desc}" oninput="_invoice.items[${i}].desc=this.value;refreshInv()" style="font-size:12px;"/>
+          <input type="number" placeholder="Qty" value="${it.qty}" oninput="_invoice.items[${i}].qty=this.value;refreshInv()" style="font-size:12px;"/>
+          <input type="number" placeholder="Unit price" value="${it.price}" step="0.01" oninput="_invoice.items[${i}].price=this.value;refreshInv()" style="font-size:12px;"/>
+          <button onclick="_invoice.items.splice(${i},1);render()" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:16px;">✕</button>
+        </div>`).join('')}</div>
+      </div>
+    </div>
+    <div class="inv-preview" id="inv-preview">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.25rem;">
+        <div><div style="font-family:var(--serif);font-size:20px;color:var(--mint);">Gelooo</div><div style="font-size:11px;color:var(--muted);">Premium Artisan Gelato · Johor Bahru</div></div>
+        <div style="text-align:right;"><div style="font-size:20px;font-weight:600;">INVOICE</div><div style="font-size:12px;color:var(--muted);">${_invoice.invoiceNo}</div><div style="font-size:12px;color:var(--muted);">${_invoice.date}</div></div>
+      </div>
+      <div style="background:var(--bg);border-radius:6px;padding:10px 12px;margin-bottom:1rem;font-size:13px;">
+        <div style="font-weight:500;margin-bottom:3px;">Bill To:</div>
+        <div>${_invoice.client||'[Client Name]'}</div>
+        <div style="color:var(--muted)">${_invoice.address||'[Address]'}</div>
+      </div>
+      <div id="inv-lines-preview">
+        <div class="inv-line hdr"><span>Description</span><span style="text-align:right">Qty</span><span style="text-align:right">Unit Price</span><span style="text-align:right">Amount</span></div>
+        ${_invoice.items.filter(i=>i.desc).map(i=>`<div class="inv-line"><span>${i.desc}</span><span style="text-align:right">${i.qty}</span><span style="text-align:right">${fmt(parseFloat(i.price)||0)}</span><span style="text-align:right">${fmt((parseFloat(i.qty)||0)*(parseFloat(i.price)||0))}</span></div>`).join('')}
+      </div>
+      <div style="margin-top:1rem;border-top:2px solid var(--charcoal);padding-top:.9rem;">
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">
+          <div style="display:flex;justify-content:space-between;width:210px;font-size:13px;"><span>Subtotal</span><span>${fmt(sub)}</span></div>
+          <div style="display:flex;justify-content:space-between;width:210px;font-size:13px;color:var(--blue);"><span>SST (8%)</span><span>${fmt(sst)}</span></div>
+          <div style="display:flex;justify-content:space-between;width:210px;font-size:15px;font-weight:700;padding:7px 11px;background:var(--mint);color:white;border-radius:7px;"><span>TOTAL DUE</span><span>${fmt(total)}</span></div>
+        </div>
+      </div>
+      <div style="margin-top:1.25rem;font-size:11px;color:var(--muted);border-top:1px solid var(--border);padding-top:10px;">Maybank · 5XXXXXXXXXX · Gelooo Sdn Bhd · 30-day terms</div>
+    </div>
+  </div>`;
+}
+function refreshInv(){
+  const sub=_invoice.items.reduce((s,i)=>s+(parseFloat(i.qty)||0)*(parseFloat(i.price)||0),0);
+  const sst=sub*SST_RATE,total=sub+sst;
+  const lp=$('inv-lines-preview');
+  if(lp) lp.innerHTML=`
+    <div class="inv-line hdr"><span>Description</span><span style="text-align:right">Qty</span><span style="text-align:right">Unit Price</span><span style="text-align:right">Amount</span></div>
+    ${_invoice.items.filter(i=>i.desc).map(i=>`<div class="inv-line"><span>${i.desc}</span><span style="text-align:right">${i.qty}</span><span style="text-align:right">${fmt(parseFloat(i.price)||0)}</span><span style="text-align:right">${fmt((parseFloat(i.qty)||0)*(parseFloat(i.price)||0))}</span></div>`).join('')}
+    <div style="margin-top:1rem;border-top:2px solid var(--charcoal);padding-top:.9rem;"><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">
+      <div style="display:flex;justify-content:space-between;width:210px;font-size:13px;"><span>Subtotal</span><span>${fmt(sub)}</span></div>
+      <div style="display:flex;justify-content:space-between;width:210px;font-size:13px;color:var(--blue);"><span>SST (8%)</span><span>${fmt(sst)}</span></div>
+      <div style="display:flex;justify-content:space-between;width:210px;font-size:15px;font-weight:700;padding:7px 11px;background:var(--mint);color:white;border-radius:7px;"><span>TOTAL DUE</span><span>${fmt(total)}</span></div>
+    </div></div>`;
+}
+function addInvLine(){ _invoice.items.push({desc:'',qty:1,price:0}); render(); }
+
+// ── CRUD ──────────────────────────────────────────────────────────────────
+function openAdd(){
+  $('f-date').value=new Date().toISOString().slice(0,10);
+  refreshCats();
+  $('modal-add').classList.remove('hidden');
+}
+function closeModal(id){ $(id).classList.add('hidden'); }
+function refreshCats(){
+  const type=$('f-type').value;
+  const cats=type==='income'?INCOME_CATS:EXPENSE_CATS;
+  $('f-cat').innerHTML=cats.map(c=>`<option>${c}</option>`).join('');
+}
+
+async function saveTx(){
+  const spin=$('save-spin'); spin.classList.remove('hidden');
+  const maxId=db.transactions.length?Math.max(...db.transactions.map(t=>t.id)):0;
+  const t={
+    id:maxId+1, date:$('f-date').value, type:$('f-type').value,
+    desc:$('f-desc').value||'Untitled', amount:parseFloat($('f-amount').value)||0,
+    category:$('f-cat').value, vendor:$('f-vendor').value,
+    payment:$('f-pay').value, status:$('f-status').value, notes:$('f-notes').value
+  };
+  try {
+    await appendRow(TX_SHEET, txToRow(t));
+    db.transactions.push({...t, _row: db.transactions.length+2});
+    closeModal('modal-add');
+    ['f-desc','f-amount','f-vendor','f-notes'].forEach(id=>$(id).value='');
+    toast('Transaction saved to Google Sheets');
+    await syncNow(true);
+    render();
+  } catch(e){ toast('Save failed: '+e.message,'err'); }
+  spin.classList.add('hidden');
+}
+
+async function deleteTx(rowIndex){
+  if(!confirm('Delete this transaction? This will remove it from Google Sheets.')) return;
+  try {
+    const gids=await getSheetGids();
+    await deleteRow(TX_SHEET, rowIndex-1, gids[TX_SHEET]);
+    toast('Transaction deleted');
+    await syncNow(true);
+    render();
+  } catch(e){ toast('Delete failed: '+e.message,'err'); }
+}
+
+function updateProd(rowIndex, field, val){
+  const p=db.products.find(p=>p._row===rowIndex); if(!p) return;
+  p[field]=field==='name'?val:(parseFloat(val)||0);
+  if(field==='unitsSold') p[field]=parseInt(val)||0;
+  const row=$(`pr-${rowIndex}`); if(row) row.outerHTML=rProdRow(p);
+}
+
+async function saveProd(rowIndex){
+  const p=db.products.find(p=>p._row===rowIndex); if(!p) return;
+  try {
+    const range=`${PROD_SHEET}!A${rowIndex}:G${rowIndex}`;
+    const url=`${sheetsBase}/${SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW&key=${API_KEY}`;
+    await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({range,majorDimension:'ROWS',values:[prodToRow(p)]})});
+    toast('Product saved to Google Sheets');
+  } catch(e){ toast('Save failed: '+e.message,'err'); }
+}
+
+async function addProduct(){
+  const maxId=db.products.length?Math.max(...db.products.map(p=>p.id)):0;
+  const p={id:maxId+1,name:'New Product',material:0,labour:0,overhead:0,sellPrice:0,unitsSold:0};
+  try {
+    await appendRow(PROD_SHEET, prodToRow(p));
+    toast('Product added to Google Sheets');
+    await syncNow(true);
+    render();
+  } catch(e){ toast('Add failed: '+e.message,'err'); }
+}
+
+async function deleteProd(rowIndex){
+  if(!confirm('Delete this product from Google Sheets?')) return;
+  try {
+    const gids=await getSheetGids();
+    await deleteRow(PROD_SHEET, rowIndex-1, gids[PROD_SHEET]);
+    toast('Product deleted');
+    await syncNow(true);
+    render();
+  } catch(e){ toast('Delete failed: '+e.message,'err'); }
+}
+
+// ── Receipt AI ────────────────────────────────────────────────────────────
+function openReceipt(){
+  $('r-preview').classList.add('hidden');
+  $('r-loading').classList.add('hidden');
+  $('r-ai-box').classList.add('hidden');
+  $('r-form').classList.add('hidden');
+  $('r-save-btn').classList.add('hidden');
+  $('r-dup-warn').classList.add('hidden');
+  $('r-amount-picker').classList.add('hidden');
+  _lastInvoiceNo = '';
+  $('r-file').value='';
+  $('modal-receipt').classList.remove('hidden');
+}
+function handleDrop(e){ const f=e.dataTransfer.files[0]; if(f) processRFile(f); }
+function handleRFile(inp){ if(inp.files[0]) processRFile(inp.files[0]); }
+function processRFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{ const src=e.target.result; $('r-preview').src=src; $('r-preview').classList.remove('hidden'); scanReceipt(src); };
+  reader.readAsDataURL(file);
+}
+async function scanReceipt(imgData){
+  $('r-loading').classList.remove('hidden');
+  $('r-ai-box').classList.add('hidden');
+  const b64=imgData.split(',')[1];
+  const mt=imgData.split(';')[0].split(':')[1];
+  try {
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mt,data:b64}},{type:'text',text:'You are scanning a Malaysian receipt or supplier invoice for Gelooo Sdn Bhd, a gelato company in Johor Bahru. The image may be rotated, sideways, blurry, printed on thermal paper, or contain Chinese/Malay text — read it carefully.\n\nExtract and return ONLY valid JSON with no markdown, no explanation, no extra text:\n{\n  "vendor": "the SELLER or STORE name (e.g. Lotus\'s, Ng Ming Huat, Classic Fine Foods)",\n  "invoice_no": "receipt/invoice/doc number if visible, else null",\n  "date": "YYYY-MM-DD — convert from DD/MM/YYYY or DD.MM.YYYY format",\n  "total": FINAL amount paid as a plain number (e.g. 37.49) — use TOTAL, Rounded Total, Final Total, Grand Total, TOTAL TO PAY — NEVER use subtotal or pre-discount amounts,\n  "items": [{"desc": "item name", "qty": 1, "unit_price": 0.00, "amount": 0.00}],\n  "category": "pick ONE of exactly: Ingredients & Supplies | Packaging | Utilities | Rent | Staff Costs | Marketing | Equipment | Other Expenses",\n  "notes": "brief description of what was purchased"\n}\n\nCRITICAL RULES for total extraction:\n- Lotus\'s / supermarket receipts: use the TOTAL line (after all discounts applied), NOT Sub-Total. Ignore BUY X FOR RM Y discount lines — those are already reflected in TOTAL\n- Invoices with Sub Total + GST/SST + Rounding: use Rounded Total or Grand Total\n- Invoices with Nett Amt column: sum the Nett Amt column\n- If you see TOTAL TO PAY and then more items after it, sum everything\n- total must be a plain number, never a string\n- Vendor: use English name if bilingual (Chinese + English) — take the English company name\n- Date format: DD/MM/YYYY → YYYY-MM-DD (e.g. 18/05/2026 → 2026-05-18)\n- Category guidance: blueberries/fruit/produce = Ingredients & Supplies; bottles/jars/tape/packaging = Packaging; electricity/water = Utilities\n- Return ONLY the JSON object, nothing else'}]}]})});
     const d=await resp.json();
     const txt=d.content.map(c=>c.text||'').join('');
     let ai;
@@ -918,7 +1794,33 @@ async function scanReceipt(imgData){
       ['Category', ai.category||'Other'],
     ].map(([l,v])=>`<div class="ai-field"><span class="ai-lbl">${l}</span><span class="ai-val">${v}</span></div>`).join('')+itemsHtml;
     $('r-vendor').value=ai.vendor||'';
-    $('r-amount').value=ai.total!=null?parseFloat(ai.total).toFixed(2):'';
+
+    // ── AMOUNT PICKER — collect all detected amounts ─────────────────────
+    // ── Only show picker if DuitNow/paid differs from TOTAL (rounding case) ──
+    const totalVal = ai.total != null ? parseFloat(ai.total) : 0;
+    const paidVal  = ai.paid  != null ? parseFloat(ai.paid)  : null;
+    const hasDiff  = paidVal != null && Math.abs(paidVal - totalVal) <= 0.10 && paidVal !== totalVal;
+
+    $('r-amount').value = totalVal.toFixed(2);
+
+    if(hasDiff) {
+      $('r-amount-picker').classList.remove('hidden');
+      const opts = [
+        {label:'TOTAL', value:totalVal, hint:'Invoice/receipt total (before rounding)', color:'var(--mint)'},
+        {label:'DuitNow / Paid', value:paidVal, hint:'Actual amount paid (incl. rounding)', color:'var(--blue)'},
+      ];
+      $('r-amount-options').innerHTML = opts.map((opt,i) => `
+        <button onclick="pickAmount(${opt.value},${i})" id="amt-opt-${i}"
+          style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1.5px solid ${i===0?opt.color:'var(--border)'};border-radius:8px;background:${i===0?'var(--mint-l)':'var(--surface)'};cursor:pointer;font-family:var(--font);font-size:13px;text-align:left;transition:all 0.12s;width:100%;">
+          <span>
+            <span style="font-weight:600;color:var(--charcoal);">${opt.label}</span>
+            <span style="font-size:11px;color:var(--muted);display:block;">${opt.hint}</span>
+          </span>
+          <span style="font-weight:700;font-size:16px;color:${opt.color};">RM ${opt.value.toFixed(2)}</span>
+        </button>`).join('');
+    } else {
+      $('r-amount-picker').classList.add('hidden');
+    }
     $('r-date').value=ai.date||new Date().toISOString().slice(0,10);
     // build notes from items
     const itemDesc=ai.items&&ai.items.length?ai.items.slice(0,3).map(i=>i.desc||'').join(', '):'';
@@ -947,6 +1849,25 @@ async function scanReceipt(imgData){
     $('r-dup-warn').classList.add('hidden');
     $('r-form').classList.remove('hidden');
     $('r-save-btn').classList.remove('hidden');
+  }
+}
+
+// ── Amount picker ────────────────────────────────────────────────────────
+function pickAmount(value, idx) {
+  // Highlight selected button
+  document.querySelectorAll('[id^="amt-opt-"]').forEach((btn,i) => {
+    const selected = i === idx;
+    btn.style.borderColor = selected ? 'var(--mint)' : 'var(--border)';
+    btn.style.background = selected ? 'var(--mint-l)' : 'var(--surface)';
+    btn.querySelector('span:last-child').style.color = selected ? 'var(--mint-d)' : 'var(--charcoal)';
+  });
+  if(value != null) {
+    $('r-amount').value = parseFloat(value).toFixed(2);
+  } else {
+    // Manual entry — clear and focus
+    $('r-amount').value = '';
+    $('r-form').classList.remove('hidden');
+    setTimeout(() => $('r-amount').focus(), 100);
   }
 }
 
@@ -1214,9 +2135,237 @@ async function runPOSImport() {
   }
 }
 
+
+// ── TAX & SST CALCULATOR PAGE ─────────────────────────────────────────────
+function rTaxCalc(){
+  const inc = totInc();
+  const exp = totExp();
+  const netP = inc - exp;
+
+  // SST Status
+  const sstThreshold = 500000;
+  const sstStatus = inc >= sstThreshold ? 'required' : 'not-required';
+  const sstPct = (inc / sstThreshold * 100).toFixed(1);
+  const sstRemaining = Math.max(0, sstThreshold - inc);
+
+  // Corporate tax calculation (SME rates 2025)
+  // Assumes: paid-up capital ≤ RM2.5M, gross income ≤ RM50M
+  // Tier 1: First RM150,000 @ 15%
+  // Tier 2: RM150,001 – RM600,000 @ 17%
+  // Tier 3: Above RM600,000 @ 24%
+  function calcCorpTax(chargeable) {
+    if(chargeable <= 0) return { t1:0, t2:0, t3:0, total:0 };
+    let t1=0, t2=0, t3=0;
+    const tier1 = Math.min(chargeable, 150000);
+    t1 = tier1 * 0.15;
+    if(chargeable > 150000) {
+      const tier2 = Math.min(chargeable - 150000, 450000);
+      t2 = tier2 * 0.17;
+    }
+    if(chargeable > 600000) {
+      const tier3 = chargeable - 600000;
+      t3 = tier3 * 0.24;
+    }
+    return { t1, t2, t3, total: t1+t2+t3 };
+  }
+
+  const tax = calcCorpTax(netP);
+  const effectiveRate = netP > 0 ? (tax.total / netP * 100).toFixed(1) : 0;
+  const afterTax = netP - tax.total;
+
+  // SST collected from income transactions
+  const sstCollected = inc * SST_RATE;
+
+  return `
+  <div style="margin-bottom:1.5rem;">
+    <h2 style="font-size:16px;font-weight:600;margin-bottom:4px;">Tax & SST Calculator</h2>
+    <div style="font-size:13px;color:var(--muted);">Based on your current transactions · Malaysian tax rates 2025 · Gelooo Sdn Bhd (SME)</div>
+  </div>
+
+  <!-- SST STATUS CARD -->
+  <div class="card card-pad" style="margin-bottom:1rem;border-left:4px solid ${sstStatus==='required'?'var(--red)':'var(--mint)'};">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+      <div style="flex:1;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px;">SST Registration Status</div>
+        <div style="font-size:22px;font-weight:700;color:${sstStatus==='required'?'var(--red-d)':'var(--mint-d)'};">
+          ${sstStatus==='required'?'⚠ Registration Required':'✓ Below Threshold — Not Required'}
+        </div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px;">
+          ${sstStatus==='required'
+            ? 'Your revenue exceeds RM500,000. You must register with RMCD and charge SST to customers.'
+            : `You need <strong>${fmt(sstRemaining)}</strong> more revenue to hit the RM500,000 SST threshold.`}
+        </div>
+      </div>
+      <div style="text-align:right;min-width:160px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Progress to threshold</div>
+        <div style="background:var(--bg);border-radius:4px;height:10px;overflow:hidden;margin-bottom:6px;">
+          <div style="width:${Math.min(100,sstPct)}%;height:100%;background:${sstStatus==='required'?'var(--red)':'var(--mint)'};border-radius:4px;transition:width 0.4s;"></div>
+        </div>
+        <div style="font-size:12px;font-weight:600;">${fmt(inc)} / ${fmt(sstThreshold)}</div>
+        <div style="font-size:11px;color:var(--muted);">${sstPct}% of threshold</div>
+      </div>
+    </div>
+
+    <!-- SST toggle -->
+    <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-size:13px;font-weight:500;">Apply SST to your transactions?</div>
+        <div style="font-size:12px;color:var(--muted);">Toggle off if you are not SST-registered</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn ${SST_RATE>0?'btn-primary':'btn-ghost'}" onclick="setSSTRate(0.08);go('taxcalc')" style="font-size:12px;">
+          On (8%)
+        </button>
+        <button class="btn ${SST_RATE===0?'btn-danger':'btn-ghost'}" onclick="setSSTRate(0);go('taxcalc')" style="font-size:12px;">
+          Off (0%)
+        </button>
+      </div>
+    </div>
+
+    ${SST_RATE > 0 ? `
+    <div style="margin-top:1rem;background:var(--blue-l);border-radius:8px;padding:12px 14px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div><div style="font-size:11px;color:var(--muted);">SST Collected (8%)</div><div style="font-weight:600;color:var(--blue-d);font-size:15px;">${fmt(sstCollected)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);">Revenue excl SST</div><div style="font-weight:600;font-size:15px;">${fmt(inc)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);">Revenue incl SST</div><div style="font-weight:600;font-size:15px;">${fmt(inc*(1+SST_RATE))}</div></div>
+    </div>` : `
+    <div style="margin-top:1rem;background:var(--amber-l);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--amber-d);">
+      SST is currently turned <strong>OFF</strong>. No SST will be charged or calculated on your transactions.
+    </div>`}
+  </div>
+
+  <!-- CORPORATE TAX CARD -->
+  <div class="card card-pad" style="margin-bottom:1rem;">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:1rem;">Corporate Income Tax Estimate (LHDN · SME Rates 2025)</div>
+
+    <div style="background:var(--bg);border-radius:8px;padding:1rem;margin-bottom:1rem;font-size:13px;">
+      <div style="font-weight:500;margin-bottom:8px;color:var(--muted);">Chargeable Income = Net Profit after expenses</div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>Total Revenue</span><span class="positive">${fmt(inc)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>Less: Total Expenses</span><span class="negative">(${fmt(exp)})</span></div>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;font-weight:600;"><span>Chargeable Income</span><span class="${netP>=0?'positive':'negative'}">${fmt(netP)}</span></div>
+    </div>
+
+    ${netP <= 0 ? `
+    <div style="background:var(--blue-l);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--blue-d);">
+      No corporate tax payable — your chargeable income is RM 0 or a loss. Losses can be carried forward to offset future profits.
+    </div>` : `
+    <!-- Tax tiers -->
+    <div style="margin-bottom:1rem;">
+      <div style="font-size:12px;font-weight:500;color:var(--muted);margin-bottom:8px;">SME Tax Tiers Breakdown</div>
+      ${[
+        ['Tier 1', 'First RM 150,000', '15%', Math.min(netP,150000), tax.t1, '#D1FAE5', '#065F46'],
+        ['Tier 2', 'RM 150,001 – RM 600,000', '17%', Math.max(0,Math.min(netP-150000,450000)), tax.t2, '#DBEAFE', '#1E40AF'],
+        ['Tier 3', 'Above RM 600,000', '24%', Math.max(0,netP-600000), tax.t3, '#FEE2E2', '#991B1B'],
+      ].map(([tier,range,rate,income,taxAmt,bg,tc])=> income > 0 ? `
+      <div style="background:${bg};border-radius:8px;padding:10px 14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:${tc};">${tier} · ${rate}</div>
+          <div style="font-size:11px;color:var(--muted);">${range} · Taxable: ${fmt(income)}</div>
+        </div>
+        <div style="font-size:15px;font-weight:700;color:${tc};">${fmt(taxAmt)}</div>
+      </div>` : '').join('')}
+    </div>
+
+    <!-- Tax summary -->
+    <div style="background:var(--charcoal);border-radius:8px;padding:1rem;color:white;">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;">
+        <div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:3px;">Est. Tax Payable</div><div style="font-size:18px;font-weight:700;color:var(--mint);">${fmt(tax.total)}</div></div>
+        <div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:3px;">Effective Rate</div><div style="font-size:18px;font-weight:700;color:var(--mint);">${effectiveRate}%</div></div>
+        <div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:3px;">After-Tax Profit</div><div style="font-size:18px;font-weight:700;color:white;">${fmt(afterTax)}</div></div>
+      </div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.4);border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;">
+        ⚠ Estimate only. Actual tax depends on allowable deductions, capital allowances & LHDN assessment. Consult your tax advisor.
+      </div>
+    </div>`}
+  </div>
+
+  <!-- WHAT-IF SIMULATOR -->
+  <div class="card card-pad" style="margin-bottom:1rem;">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.75rem;">What-If Tax Simulator</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Enter a projected annual revenue to see your estimated tax & SST obligations.</div>
+    <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:1rem;flex-wrap:wrap;">
+      <div style="flex:1;min-width:160px;">
+        <label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px;">Projected Revenue (RM)</label>
+        <input type="number" id="sim-rev" placeholder="e.g. 600000" style="width:100%;" oninput="runSimulator()"/>
+      </div>
+      <div style="flex:1;min-width:160px;">
+        <label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px;">Projected Expenses (RM)</label>
+        <input type="number" id="sim-exp" placeholder="e.g. 400000" style="width:100%;" oninput="runSimulator()"/>
+      </div>
+    </div>
+    <div id="sim-result"></div>
+  </div>
+
+  <!-- REFERENCE TABLE -->
+  <div class="card card-pad">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.75rem;">Malaysian Tax Reference (2025)</div>
+    <table>
+      <thead><tr><th>Tax Type</th><th>Threshold</th><th>Rate</th><th>Applies To</th></tr></thead>
+      <tbody>
+        <tr><td>Service Tax (SST)</td><td>RM 500,000 / year</td><td><span class="badge badge-sst">8%</span></td><td>F&B and most services</td></tr>
+        <tr><td>Corp Tax — Tier 1</td><td>First RM 150,000</td><td><span class="badge badge-paid">15%</span></td><td>SME (paid-up ≤ RM2.5M)</td></tr>
+        <tr><td>Corp Tax — Tier 2</td><td>RM 150K – RM 600K</td><td><span class="badge badge-income">17%</span></td><td>SME (paid-up ≤ RM2.5M)</td></tr>
+        <tr><td>Corp Tax — Tier 3</td><td>Above RM 600,000</td><td><span class="badge badge-expense">24%</span></td><td>All resident companies</td></tr>
+        <tr><td>Corp Tax (standard)</td><td>All income</td><td><span class="badge badge-expense">24%</span></td><td>Paid-up > RM2.5M</td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.7;">
+      Source: LHDN Malaysia, RMCD Malaysia · Rates effective 2025 · SST threshold RM500,000 per rolling 12 months · SME definition: paid-up capital ≤ RM2.5M and gross income ≤ RM50M
+    </div>
+  </div>`;
+}
+
+function setSSTRate(rate) {
+  // Update the global SST rate used across all calculations
+  // We can't modify the const, so we use a workaround via window
+  window._sstOverride = rate;
+  toast(rate > 0 ? 'SST enabled at 8%' : 'SST disabled — not charging SST');
+}
+
+function runSimulator() {
+  const rev = parseFloat(document.getElementById('sim-rev')?.value) || 0;
+  const exp = parseFloat(document.getElementById('sim-exp')?.value) || 0;
+  const net = rev - exp;
+
+  if(!rev) { document.getElementById('sim-result').innerHTML=''; return; }
+
+  // Tax calc
+  let t1=0,t2=0,t3=0;
+  if(net>0){
+    t1 = Math.min(net,150000)*0.15;
+    if(net>150000) t2=Math.min(net-150000,450000)*0.17;
+    if(net>600000) t3=(net-600000)*0.24;
+  }
+  const totalTax=t1+t2+t3;
+  const sstAmt = rev*0.08;
+  const sstNeeded = rev>=500000;
+  const effRate = net>0?(totalTax/net*100).toFixed(1):0;
+
+  document.getElementById('sim-result').innerHTML=`
+  <div style="background:var(--bg);border-radius:8px;padding:1rem;display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+    <div style="background:white;border-radius:6px;padding:10px;border:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--muted);">SST Registration</div>
+      <div style="font-weight:600;font-size:14px;color:${sstNeeded?'var(--red-d)':'var(--mint-d)'};">${sstNeeded?'⚠ Required':'✓ Not Required'}</div>
+      <div style="font-size:11px;color:var(--muted);">${sstNeeded?'Must charge SST to customers':'Below RM500K threshold'}</div>
+    </div>
+    <div style="background:white;border-radius:6px;padding:10px;border:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--muted);">SST to collect (if registered)</div>
+      <div style="font-weight:600;font-size:14px;color:var(--blue-d);">${fmt(sstAmt)}</div>
+    </div>
+    <div style="background:white;border-radius:6px;padding:10px;border:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--muted);">Est. Corp Tax</div>
+      <div style="font-weight:600;font-size:14px;color:var(--red-d);">${fmt(totalTax)}</div>
+      <div style="font-size:11px;color:var(--muted);">Effective rate: ${effRate}%</div>
+    </div>
+    <div style="background:white;border-radius:6px;padding:10px;border:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--muted);">After-Tax Profit</div>
+      <div style="font-weight:600;font-size:14px;color:${net-totalTax>=0?'var(--green-d)':'var(--red-d)'};">${fmt(net-totalTax)}</div>
+    </div>
+  </div>`;
+}
+
 // ── Auto pre-fill key from URL (optional) ────────────────────────────────
 window.addEventListener('DOMContentLoaded',()=>{
-  $('setup-key').value='';
+  startApp();
 });
 </script>
 </body>
