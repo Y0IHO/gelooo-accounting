@@ -878,7 +878,7 @@ async function scanReceipt(imgData){
   const b64=imgData.split(',')[1];
   const mt=imgData.split(';')[0].split(':')[1];
   try {
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mt,data:b64}},{type:'text',text:'You are scanning a Malaysian receipt or supplier invoice for Gelooo Sdn Bhd, a gelato company in Johor Bahru. The image may be rotated, sideways, blurry, printed on thermal paper, or contain Chinese/Malay text — read it carefully.\n\nExtract and return ONLY valid JSON with no markdown, no explanation, no extra text:\n{\n  "vendor": "the SELLER or STORE name (e.g. Lotus\'s, Ng Ming Huat, Classic Fine Foods)",\n  "invoice_no": "receipt/invoice/doc number if visible, else null",\n  "date": "YYYY-MM-DD — convert from DD/MM/YYYY or DD.MM.YYYY format",\n  "total": the main TOTAL line as a plain number (e.g. 37.49),\\n  "subtotal": sub-total before discounts/rounding if different from total else null,\\n  "paid": actual amount paid via DuitNow QR/cash/card if shown and different from total else null,\\n  "rounded": rounded total if explicitly shown separately else null,\\n  "items": [{"desc": "item name", "qty": 1, "unit_price": 0.00, "amount": 0.00}],\\n  "category": "pick ONE of exactly: Ingredients & Supplies | Packaging | Utilities | Rent | Staff Costs | Marketing | Equipment | Other Expenses",\\n  "notes": "brief description of what was purchased"\\n}\\n\\nCRITICAL RULES for total extraction:\\n- Lotus\'s / supermarket receipts: use the TOTAL line (after all discounts applied), NOT Sub-Total\\n- Invoices with Sub Total + GST/SST + Rounding: use Rounded Total or Grand Total\\n- total must be a plain number, never a string\\n- Vendor: use English name if bilingual\\n- Date: DD/MM/YYYY to YYYY-MM-DD\\n- Category: blueberries/fruit/produce = Ingredients & Supplies; bottles/jars/tape = Packaging\\n- Return ONLY the JSON object, nothing else'kens:1000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mt,data:b64}},{type:'text',text:'You are scanning a Malaysian receipt or supplier invoice for Gelooo Sdn Bhd, a gelato company in Johor Bahru. The image may be rotated, sideways, blurry, printed on thermal paper, or contain Chinese/Malay text.\n\nExtract and return ONLY valid JSON with no markdown, no explanation:\n{\n  "vendor": "the SELLER or STORE name",\n  "invoice_no": "receipt/invoice/doc number if visible, else null",\n  "date": "YYYY-MM-DD",\n  "total": the main TOTAL line as a plain number,\n  "subtotal": sub-total before discounts/rounding if different from total else null,\n  "paid": actual amount paid via DuitNow QR/cash/card if shown and different from total else null,\n  "rounded": rounded total if explicitly shown separately else null,\n  "items": [{"desc": "item name", "qty": 1, "unit_price": 0.00, "amount": 0.00}],\n  "category": "pick ONE: Ingredients & Supplies | Packaging | Utilities | Rent | Staff Costs | Marketing | Equipment | Other Expenses",\n  "notes": "brief description"\n}\nReturn ONLY the JSON object.'}]}]})});
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mt,data:b64}},{type:'text',text:'You are scanning a Malaysian receipt or supplier invoice for Gelooo Sdn Bhd, a gelato company in Johor Bahru. The image may be rotated, sideways, blurry, printed on thermal paper, or contain Chinese/Malay text — read it carefully.\n\nExtract and return ONLY valid JSON with no markdown, no explanation, no extra text:\n{\n  "vendor": "the SELLER or STORE name (e.g. Lotus\'s, Ng Ming Huat, Classic Fine Foods)",\n  "invoice_no": "receipt/invoice/doc number if visible, else null",\n  "date": "YYYY-MM-DD — convert from DD/MM/YYYY or DD.MM.YYYY format",\n  "total": the main TOTAL line as a plain number (e.g. 37.49),\\n  "subtotal": sub-total before discounts/rounding if different from total else null,\\n  "paid": actual amount paid via DuitNow QR/cash/card if shown and different from total else null,\\n  "rounded": rounded total if explicitly shown separately else null,\\n  "items": [{"desc": "item name", "qty": 1, "unit_price": 0.00, "amount": 0.00}],\\n  "category": "pick ONE of exactly: Ingredients & Supplies | Packaging | Utilities | Rent | Staff Costs | Marketing | Equipment | Other Expenses",\\n  "notes": "brief description of what was purchased"\\n}\\n\\nCRITICAL RULES for total extraction:\\n- Lotus\'s / supermarket receipts: use the TOTAL line (after all discounts applied), NOT Sub-Total\\n- Invoices with Sub Total + GST/SST + Rounding: use Rounded Total or Grand Total\\n- total must be a plain number, never a string\\n- Vendor: use English name if bilingual\\n- Date: DD/MM/YYYY to YYYY-MM-DD\\n- Category: blueberries/fruit/produce = Ingredients & Supplies; bottles/jars/tape = Packaging\\n- Return ONLY the JSON object, nothing else'}]}]})});
     const d=await resp.json();
     let ai;
     try { ai=JSON.parse(d.content.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim()); }
@@ -935,6 +935,149 @@ async function saveReceipt(){
   spin.classList.add('hidden');
 }
 function handleSearch(val){ if(currentPage==='transactions') $('content').innerHTML=rTransactions(val); }
+
+// ── Amount picker ────────────────────────────────────────────────────────
+function pickAmount(value, idx) {
+  document.querySelectorAll('[id^="amt-opt-"]').forEach((btn,i) => {
+    const selected = i === idx;
+    btn.style.borderColor = selected ? 'var(--mint)' : 'var(--border)';
+    btn.style.background = selected ? 'var(--mint-l)' : 'var(--surface)';
+    btn.querySelector('span:last-child').style.color = selected ? 'var(--mint-d)' : 'var(--charcoal)';
+  });
+  if(value != null) $('r-amount').value = parseFloat(value).toFixed(2);
+}
+
+// ── Duplicate detection ───────────────────────────────────────────────────
+function checkDuplicate(ai) {
+  const invoiceNo = (ai.invoice_no||'').toString().trim().toLowerCase();
+  const vendor    = (ai.vendor||'').toString().trim().toLowerCase();
+  const total     = parseFloat(ai.total)||0;
+  const date      = (ai.date||'').trim();
+  for(const t of db.transactions) {
+    const tNotes = (t.notes||'').toLowerCase();
+    const tVendor = (t.vendor||'').toLowerCase();
+    if(invoiceNo && tNotes.includes('inv:'+invoiceNo)) {
+      return `Invoice <strong>${ai.invoice_no}</strong> from <strong>${ai.vendor}</strong> already exists:<br/>Entry #${t.id} · ${t.date} · ${fmt(t.amount)}`;
+    }
+    const sameVendor = vendor && tVendor && (tVendor.includes(vendor.split(' ')[0]) || vendor.includes(tVendor.split(' ')[0]));
+    const sameTotal  = total > 0 && Math.abs(t.amount - total) < 0.10;
+    const sameDate   = date && t.date === date;
+    if(sameVendor && sameTotal && sameDate) {
+      return `Same vendor, amount & date already recorded:<br/>Entry #${t.id} · ${t.vendor} · ${t.date} · ${fmt(t.amount)}`;
+    }
+    if(sameVendor && sameTotal && date && t.date) {
+      const diffDays = Math.abs((new Date(date)-new Date(t.date))/(1000*60*60*24));
+      if(diffDays <= 3) return `Similar entry within 3 days:<br/>Entry #${t.id} · ${t.vendor} · ${t.date} · ${fmt(t.amount)}<br/><span style="color:#92400E">Check before saving.</span>`;
+    }
+  }
+  return null;
+}
+function dismissDuplicate() { closeModal('modal-receipt'); toast('Receipt discarded — duplicate not saved'); }
+function overrideDuplicate() { $('r-dup-warn').classList.add('hidden'); $('r-form').classList.remove('hidden'); $('r-save-btn').classList.remove('hidden'); }
+
+// ── POS Sales Import (Jan–Apr 2026) ────────────────────────────────────────
+const POS_IMPORT_ROWS = [
+  [101,"2026-01-31","income","Gelato Sales — January 2026 (198 transactions)","Gelooo KL","Gelato Sales","DuitNow / QR",7037.27,563.0,"paid","Net sales after discounts & returns. Source: POS Jan 2026"],
+  [102,"2026-01-31","income","Service Charge — January 2026","Gelooo KL","Other Income","DuitNow / QR",170.35,13.63,"paid","Service charge collected. Source: POS Jan 2026"],
+  [103,"2026-02-28","income","Gelato Sales — February 2026 (478 transactions)","Gelooo KL","Gelato Sales","DuitNow / QR",16241.30,1299.3,"paid","Net sales after discounts & returns. Source: POS Feb 2026"],
+  [104,"2026-02-28","income","Service Charge — February 2026","Gelooo KL","Other Income","DuitNow / QR",1046.77,83.74,"paid","Service charge collected. Source: POS Feb 2026"],
+  [105,"2026-02-28","expense","Sales Returns & Refunds — February 2026","Gelooo KL","Other Expenses","Cash",25.90,0,"paid","Customer refunds. Source: POS Feb 2026"],
+  [106,"2026-03-31","income","Gelato Sales — March 2026 (623 transactions)","Gelooo KL","Gelato Sales","DuitNow / QR",20155.61,1612.45,"paid","Net sales after discounts & returns. Source: POS Mar 2026"],
+  [107,"2026-03-31","income","Service Charge — March 2026","Gelooo KL","Other Income","DuitNow / QR",924.32,73.95,"paid","Service charge collected. Source: POS Mar 2026"],
+  [108,"2026-03-31","expense","Sales Returns & Refunds — March 2026","Gelooo KL","Other Expenses","Cash",82.00,0,"paid","Customer refunds. Source: POS Mar 2026"],
+  [109,"2026-04-30","income","Gelato Sales — April 2026 (345 transactions)","Gelooo KL","Gelato Sales","DuitNow / QR",11632.87,930.63,"paid","Net sales after discounts & returns. Source: POS Apr 2026"],
+  [110,"2026-04-30","income","Service Charge — April 2026","Gelooo KL","Other Income","DuitNow / QR",513.05,41.04,"paid","Service charge collected. Source: POS Apr 2026"],
+  [111,"2026-04-30","expense","Sales Returns & Refunds — April 2026","Gelooo KL","Other Expenses","Cash",5.00,0,"paid","Customer refunds. Source: POS Apr 2026"],
+];
+const POS_IMPORT_KEY = 'gelooo_pos_import_jan_apr_2026_done';
+async function runPOSImport() {
+  if(sessionStorage.getItem(POS_IMPORT_KEY)) return;
+  const existingIds = new Set(db.transactions.map(t => t.id));
+  const toInsert = POS_IMPORT_ROWS.filter(r => !existingIds.has(r[0]));
+  if(toInsert.length === 0) { sessionStorage.setItem(POS_IMPORT_KEY,'1'); return; }
+  setSyncStatus('syncing','Importing POS data…'); showLoading(true);
+  let success=0;
+  for(const row of toInsert) {
+    try { await appendRow(TX_SHEET, row); success++; await new Promise(r=>setTimeout(r,200)); }
+    catch(e) { console.error('Failed row:', row[0], e.message); }
+  }
+  showLoading(false); sessionStorage.setItem(POS_IMPORT_KEY,'1');
+  if(success>0) { toast(`Imported ${success} POS entries (Jan–Apr 2026)`); await syncNow(true); render(); }
+}
+
+// ── Tax & SST Calculator ───────────────────────────────────────────────────
+function rTaxCalc(){
+  const inc=totInc(),exp=totExp(),netP=inc-exp;
+  const sstThreshold=500000,sstStatus=inc>=sstThreshold?'required':'not-required';
+  const sstPct=(inc/sstThreshold*100).toFixed(1),sstRemaining=Math.max(0,sstThreshold-inc);
+  function calcCorpTax(ci){
+    if(ci<=0) return{t1:0,t2:0,t3:0,total:0};
+    const t1=Math.min(ci,150000)*0.15;
+    const t2=ci>150000?Math.min(ci-150000,450000)*0.17:0;
+    const t3=ci>600000?(ci-600000)*0.24:0;
+    return{t1,t2,t3,total:t1+t2+t3};
+  }
+  const tax=calcCorpTax(netP),effRate=netP>0?(tax.total/netP*100).toFixed(1):0,afterTax=netP-tax.total;
+  return `
+  <div style="margin-bottom:1.5rem;"><h2 style="font-size:16px;font-weight:600;margin-bottom:4px;">Tax & SST Calculator</h2><div style="font-size:13px;color:var(--muted);">Based on your transactions · Malaysian rates 2025</div></div>
+  <div class="card card-pad" style="margin-bottom:1rem;border-left:4px solid ${sstStatus==='required'?'var(--red)':'var(--mint)'};">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+      <div style="flex:1;"><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px;">SST Registration Status</div>
+        <div style="font-size:20px;font-weight:700;color:${sstStatus==='required'?'var(--red-d)':'var(--mint-d)'};">${sstStatus==='required'?'⚠ Registration Required':'✓ Below Threshold — Not Required'}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px;">${sstStatus==='required'?'Revenue exceeds RM500,000. Must register with RMCD.':`Need <strong>${fmt(sstRemaining)}</strong> more to hit RM500,000 threshold.`}</div></div>
+      <div style="text-align:right;min-width:150px;"><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Progress to threshold</div>
+        <div style="background:var(--bg);border-radius:4px;height:10px;overflow:hidden;margin-bottom:6px;"><div style="width:${Math.min(100,sstPct)}%;height:100%;background:${sstStatus==='required'?'var(--red)':'var(--mint)'};border-radius:4px;"></div></div>
+        <div style="font-size:12px;font-weight:600;">${fmt(inc)} / ${fmt(sstThreshold)}</div></div></div>
+    <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);background:var(--blue-l);border-radius:8px;padding:12px 14px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:1rem;">
+      <div><div style="font-size:11px;color:var(--muted);">SST Collected (8%)</div><div style="font-weight:600;color:var(--blue-d);font-size:15px;">${fmt(totSST())}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);">Revenue excl SST</div><div style="font-weight:600;font-size:15px;">${fmt(inc)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);">Revenue incl SST</div><div style="font-weight:600;font-size:15px;">${fmt(inc*1.08)}</div></div></div>
+  </div>
+  <div class="card card-pad" style="margin-bottom:1rem;">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:1rem;">Corporate Income Tax (LHDN · SME Rates 2025)</div>
+    <div style="background:var(--bg);border-radius:8px;padding:1rem;margin-bottom:1rem;font-size:13px;">
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>Total Revenue</span><span class="positive">${fmt(inc)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>Less: Expenses</span><span class="negative">(${fmt(exp)})</span></div>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;font-weight:600;"><span>Chargeable Income</span><span class="${netP>=0?'positive':'negative'}">${fmt(netP)}</span></div></div>
+    ${netP<=0?`<div style="background:var(--blue-l);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--blue-d);">No corporate tax payable — chargeable income is RM 0 or a loss.</div>`:`
+    ${[['Tier 1','First RM 150,000','15%',Math.min(netP,150000),tax.t1,'#D1FAE5','#065F46'],
+       ['Tier 2','RM 150,001 – RM 600,000','17%',Math.max(0,Math.min(netP-150000,450000)),tax.t2,'#DBEAFE','#1E40AF'],
+       ['Tier 3','Above RM 600,000','24%',Math.max(0,netP-600000),tax.t3,'#FEE2E2','#991B1B']
+      ].filter(([,,,,inc2])=>inc2>0).map(([tier,range,rate,income,taxAmt,bg,tc])=>`
+    <div style="background:${bg};border-radius:8px;padding:10px 14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+      <div><div style="font-size:12px;font-weight:600;color:${tc};">${tier} · ${rate}</div><div style="font-size:11px;color:var(--muted);">${range} · ${fmt(income)}</div></div>
+      <div style="font-size:15px;font-weight:700;color:${tc};">${fmt(taxAmt)}</div></div>`).join('')}
+    <div style="background:var(--charcoal);border-radius:8px;padding:1rem;color:white;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:3px;">Est. Tax Payable</div><div style="font-size:18px;font-weight:700;color:var(--mint);">${fmt(tax.total)}</div></div>
+      <div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:3px;">Effective Rate</div><div style="font-size:18px;font-weight:700;color:var(--mint);">${effRate}%</div></div>
+      <div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:3px;">After-Tax Profit</div><div style="font-size:18px;font-weight:700;color:white;">${fmt(afterTax)}</div></div></div>`}
+  </div>
+  <div class="card card-pad">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.75rem;">What-If Simulator</div>
+    <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:1rem;flex-wrap:wrap;">
+      <div style="flex:1;min-width:160px;"><label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px;">Projected Revenue (RM)</label><input type="number" id="sim-rev" placeholder="e.g. 600000" style="width:100%;" oninput="runSimulator()"/></div>
+      <div style="flex:1;min-width:160px;"><label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px;">Projected Expenses (RM)</label><input type="number" id="sim-exp" placeholder="e.g. 400000" style="width:100%;" oninput="runSimulator()"/></div>
+    </div>
+    <div id="sim-result"></div>
+  </div>`;
+}
+function runSimulator(){
+  const rev=parseFloat(document.getElementById('sim-rev')?.value)||0;
+  const exp2=parseFloat(document.getElementById('sim-exp')?.value)||0;
+  const net=rev-exp2;
+  if(!rev){document.getElementById('sim-result').innerHTML='';return;}
+  let t1=0,t2=0,t3=0;
+  if(net>0){t1=Math.min(net,150000)*0.15;if(net>150000)t2=Math.min(net-150000,450000)*0.17;if(net>600000)t3=(net-600000)*0.24;}
+  const totalTax=t1+t2+t3,sstAmt=rev*0.08,sstNeeded=rev>=500000,effRate=net>0?(totalTax/net*100).toFixed(1):0;
+  document.getElementById('sim-result').innerHTML=`
+  <div style="background:var(--bg);border-radius:8px;padding:1rem;display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+    <div style="background:white;border-radius:6px;padding:10px;border:1px solid var(--border);"><div style="font-size:11px;color:var(--muted);">SST Registration</div><div style="font-weight:600;font-size:14px;color:${sstNeeded?'var(--red-d)':'var(--mint-d)'};">${sstNeeded?'⚠ Required':'✓ Not Required'}</div></div>
+    <div style="background:white;border-radius:6px;padding:10px;border:1px solid var(--border);"><div style="font-size:11px;color:var(--muted);">SST (if registered)</div><div style="font-weight:600;font-size:14px;color:var(--blue-d);">${fmt(sstAmt)}</div></div>
+    <div style="background:white;border-radius:6px;padding:10px;border:1px solid var(--border);"><div style="font-size:11px;color:var(--muted);">Est. Corp Tax</div><div style="font-weight:600;font-size:14px;color:var(--red-d);">${fmt(totalTax)}</div><div style="font-size:11px;color:var(--muted);">Rate: ${effRate}%</div></div>
+    <div style="background:white;border-radius:6px;padding:10px;border:1px solid var(--border);"><div style="font-size:11px;color:var(--muted);">After-Tax Profit</div><div style="font-weight:600;font-size:14px;color:${net-totalTax>=0?'var(--green-d)':'var(--red-d)'};">${fmt(net-totalTax)}</div></div>
+  </div>`;
+}
+
 window.addEventListener('DOMContentLoaded',()=>{ startApp(); });
 </script>
 </body>
